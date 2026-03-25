@@ -1,355 +1,206 @@
 # JOLCO Equity IRR Calculator v3
 
-> **Japanese Operating Lease with Call Option** — Equity Return Modelling Tool
-
-A browser-based financial calculator that models the full economics of a JOLCO transaction from the perspective of the Japanese BB Owner / TK (Tokumei Kumiai) equity investors. Built as a single-file React app deployable on GitHub Pages with zero backend.
-
-**Live:** https://sriniwas512.github.io/JOLCO-Calculator-V3/
+> **Japanese Operating Lease with Call Option** — an interactive, browser-based financial model for Japanese shipping equity investors evaluating the economics of a JOLCO deal.
 
 ---
 
 ## What is a JOLCO?
 
-A **Japanese Operating Lease with Call Option (JOLCO)** is a Japanese tax-driven vessel financing structure in which:
+A **JOLCO (Japanese Operating Lease with Call Option)** is a structured ship-finance product in which:
 
-1. A Japanese Special Purpose Company (**SPC**) purchases a vessel
-2. The SPC is financed by two tranches:
-   - **~70% Bank Debt** — JPY-denominated loan from a Japanese bank at low JPY rates (TONA/TIBOR + spread), typically swapped into USD
-   - **~30% TK Equity** — Tokumei Kumiai (silent partnership) equity from Japanese individual or corporate investors
-3. The SPC bareboat charters (**BBC**) the vessel to an international shipowner/charterer
-4. The charterer pays **hire** in USD, structured as:
-   - **Fixed hire** — covers principal amortisation (VP ÷ amortisation period)
-   - **Variable hire** — covers interest (allInRate × outstanding balance)
-5. At end of the lease, the charterer exercises a **Purchase Option (PO)** to buy the vessel
-6. Japanese tax law allows the SPC's depreciation losses to flow through the TK to investors, shielding their other taxable income — this is the **tax shield**
+1. A **Japanese SPC** (Special Purpose Company) acquires a vessel.
+2. The SPC is funded by:
+   - **~70% JPY bank debt** from a Japanese regional bank or trust bank at low JPY rates (TONA/TIBOR + spread), hedged into USD via a cross-currency basis swap.
+   - **~30% TK equity** from Japanese individual or institutional investors through a **Tokumei Kumiai (匿名組合)** — a silent partnership under Japan's Commercial Code that passes tax losses directly to investors.
+3. The SPC **bareboat charters** the vessel back to the original seller / shipping company under a long-term BBC.
+4. The **BBC hire** has two components:
+   - **Fixed hire** = Vessel Price ÷ Amortization Period (covers principal repayment; rate-insensitive).
+   - **Variable hire** = All-in rate × outstanding balance (covers interest on both the bank loan and the equity portion).
+5. The charterer holds **Purchase Options** stepping down over the lease term; the final year is an **obligation** to buy.
+6. **Depreciation** on the full vessel cost flows through the TK to investors, creating paper losses that offset their other taxable Japanese income — this is the primary economic driver (Stream ②).
 
-The equity investor's return has **three distinct streams**:
-- **① Charter Hire Spread** — the difference between what the charterer pays on the equity portion and what the bank charges
-- **② Tax Shield** — tax savings from Japanese accelerated depreciation (MOF 別表第一)
-- **③ Residual / PO Play** — net proceeds from PO exercise after repaying remaining debt and capital gains tax
+**All percentages and rates are fully user-adjustable.** The defaults are a realistic base case only.
 
 ---
 
-## Calculator Features
+## The Three Return Streams
 
-| Feature | Detail |
-|---|---|
-| **Vessel Database** | 15 vessel types with MOF statutory useful lives (JP & Foreign flag) |
-| **Dual Interest Rates** | Separate JPY bank rate (with USD/JPY swap cost) and USD equity/BBC hire rate |
-| **Full Depreciation Model** | 200% Declining Balance → Straight-Line switchover per MOF tables |
-| **Special Depreciation** | Year-1 bonus depreciation for MLIT-qualifying advanced vessels (18–32%) |
-| **Two Commissions** | Sale commission (upfront, % of VP) + BBC commission (annual, % of hire) |
-| **Purchase Option Schedule** | Editable per-year PO prices with auto-decline or manual override |
-| **IRR Solver** | Newton-Raphson with bisection fallback |
-| **vs Treasury** | Side-by-side spread comparison against US Treasury yield |
-| **Tokyo Night UI** | Dark-themed, fully responsive calculator with live updates |
+| Stream | What it is | Driver |
+|--------|-----------|--------|
+| **① Charter Hire Spread** | Interest earned on the equity portion of outstanding balance, net of BBC commission | Equity rate (SOFR + spread) minus BBC brokerage |
+| **② Tax Shield** | Tax saved when SPC depreciation losses flow via TK to investors, offsetting their other Japanese taxable income | MOF depreciation schedule × effective JP tax rate |
+| **③ Residual / PO** | Net proceeds when charterer exercises the Purchase Option, minus remaining bank debt and capital gains tax | PO price vs book value vs outstanding debt |
+
+The **Blended IRR** is the Internal Rate of Return combining all three streams against the total equity-plus-sale-commission outflow at Year 0.
 
 ---
 
-## Tabs
+## Financing Structure — JPY Bank Loan
 
-### Tab 1 — Deal Inputs
+The SPC borrows in JPY from a Japanese bank. Since BBC hire is paid in USD, the SPC executes a **cross-currency basis swap** to convert its JPY obligations into USD cashflows. Realistic market parameters:
 
-Everything configurable about the deal. Shows live output at the top at all times.
+| Parameter | Typical range | Default in this model |
+|-----------|-------------|---------|
+| JPY base rate (TONA/TIBOR) | 0.05 – 0.50% | 0.10% |
+| Bank spread over JPY base | 30 – 80 bps | 50 bps |
+| USD/JPY cross-currency swap cost | 40 – 70 bps | 45 bps |
+| **Effective USD cost of bank debt** | **~0.9 – 2.0%** | **~1.05%** |
+| Equity rate (SOFR + spread) | SOFR + 200 – 350 bps | SOFR 4.3% + 280 bps = **7.1%** |
 
-**Top Summary Strip** (always visible):
-- ① Charter Hire Spread total, ② Tax Shield total, ③ Residual total
-- Equity Deployed, Total Profit, Equity IRR, Blended IRR, vs UST spread
-
-**Vessel & Structure Panel:**
-
-| Input | Default | Description |
-|---|---|---|
-| Vessel Type | Bulk ≥2,000 GT | Drives MOF statutory useful life and depreciation |
-| Flag State | Foreign (PAN/LBR/MHL) | Japanese flag = longer life + higher special depr |
-| Vessel Price | $29.4M | Total acquisition cost |
-| Debt / Equity Split | 70% debt | Bank tranche as % of VP; equity = VP − debt |
-| Sale Commission | 2.0% | Purchase brokerage on VP; paid at Year 0 from equity |
-| BBC Commission | 1.25% | Annual bareboat charter brokerage on gross hire |
-
-**Charter & Interest Panel — two sub-sections:**
-
-*Bank Loan (JPY):*
-
-| Input | Default | Description |
-|---|---|---|
-| JPY Base Rate (TONA/TIBOR) | 0.10% | Japanese policy rate |
-| Bank Spread | 50 bps | Credit spread charged by lending bank |
-| USD/JPY Swap Cost | 45 bps | Cross-currency basis swap cost to convert JPY loan to USD |
-| → Effective USD cost | *live* | JPY base + bank spread + swap = e.g. 1.05% |
-
-*BBC Hire Rate (USD):*
-
-| Input | Default | Description |
-|---|---|---|
-| SOFR Rate | 4.3% | USD reference rate |
-| Equity Spread | 280 bps | Spread reflecting charterer credit + vessel risk |
-
-*Monthly Hire Display (live, Yr1):*
-- **Fixed Hire** — principal component; rate-insensitive
-- **Variable — Bank (JPY→USD)** — bank interest on debt balance
-- **Variable — Equity (USD)** — equity return on equity balance
-- **Total Monthly Hire** — all three combined
-
-**Purchase Options & Tax Panel:**
-
-| Input | Default | Description |
-|---|---|---|
-| First PO Year | 5 | Earliest year charterer can exercise |
-| Last Year (Obligatory) | 10 | Final year; charterer must buy |
-| Exercise at Year | 10 | Modelled exit year (drives IRR horizon) |
-| PO prices (per year) | Auto | VP − (VP/amortYrs × yr); fully editable per year |
-| Effective Tax Rate | 30.62% | Japanese corp tax + local + defense surtax |
-| US Treasury Yield | 4.25% | Risk-free benchmark for spread comparison |
-| Special Depreciation (Yr1) | 0% | MLIT advanced vessels: 18–30% foreign, 20–32% JP |
+The sharp difference between cheap JPY bank debt (~1%) and the USD equity rate (~7%) is a core economic lever — the bank earns very little while equity captures the spread.
 
 ---
 
-### Tab 2 — Depreciation Scale
+## Commissions
 
-- Full bar chart of annual depreciation over statutory useful life
-- Ordinary (DB/SL) vs Special year-1 component shown in two colours
-- Years beyond exercise date grayed out
-- Summary: Yr1%, 3yr cumulative, total tax shield (within lease), DB→SL switchover year
-- MOF Rate Index table: all 15 vessel types, JP and foreign lives, click to switch
+Two separate brokerage commissions are modelled:
 
----
-
-### Tab 3 — Equity Cashflows
-
-**Waterfall Visualization:**
-
-```
-− Equity Invested (n% of VP)
-− Sale Commission (n%)
-────────────────────────────
-+ Principal Returned via Hire
-+ ① Interest on Equity Balance (gross)
-  − BBC Commission (n% of hire)
-+ ② Tax Shield (Net)
-+ ③ Residual from PO Exercise
-────────────────────────────
-= Total Returned
-= NET PROFIT → IRR
-```
-
-**Year-by-Year Table:**
-- Columns: Yr | ① Hire Spread (net) | ② Tax Shield | ③ Residual | Total CF | Cumulative
-- Click any year to expand full hire breakdown:
-  - Gross hire received (fixed + bank variable + equity variable)
-  - BBC commission deducted
-  - Bank allocation (principal + interest at bankAllInRate)
-  - Equity allocation (principal return + interest income − commission)
-
-**IRR summary:** Equity IRR (hire + residual only) | Blended IRR (all three streams) | MoIC
+| Commission | Default | When paid | Tax treatment |
+|-----------|---------|-----------|--------------|
+| **Sale Commission** | 2.0% of VP | Year 0, at closing | Upfront cost; increases total equity deployed |
+| **BBC Commission** | 1.25% of gross hire | Annual, each year | Deductible SPC expense; reduces taxable P&L and equity net cashflow |
 
 ---
 
-### Tab 4 — vs Treasury
+## Tax and Depreciation (Japanese Rules)
 
-Side-by-side comparison of JOLCO blended IRR against US Treasury yield (same capital, same horizon):
-- Spread in basis points
-- Qualitative commentary: strong / moderate / thin / negligible / below risk-free
-
----
-
-## Financial Model
-
-### Dual-Rate Structure
-
-The model correctly separates the two financing relationships:
-
-```
-bankAllInRate    = (jpyBaseRate% + bankSpreadBps%) / 100  +  swapCostBps / 10000
-                 = e.g. (0.10 + 0.50)% + 0.45%  =  1.05%
-
-equityAllInRate  = (sofrRate + spreadBps / 100) / 100
-                 = e.g. (4.3 + 2.8)%            =  7.10%
-```
-
-The ~606 bps differential between what the SPC pays the bank and what it charges the charterer for the equity portion is the core source of Stream ① profit.
-
-### Annual Cashflow Loop
-
-For each year 1 → exerciseYear:
-
-```
-fixedHire         = VP / amortYrs                              (principal amortisation)
-variableHireBank  = outstandingDebt   × bankAllInRate          (JPY interest, hedged)
-variableHireEquity= outstandingEquity × equityAllInRate        (equity interest component)
-totalHire         = fixedHire + variableHireBank + variableHireEquity
-bbcCommCost       = totalHire × bbcCommission%                 (annual brokerage)
-netHire           = totalHire − bbcCommCost
-
-bankPrincipal     = annualPrincipal × debtPct%
-bankInterest      = outstandingDebt × bankAllInRate
-totalToBank       = bankPrincipal + bankInterest
-
-equityPrincipalReturn = annualPrincipal × (1 − debtPct%)
-equityInterestIncome  = outstandingEquity × equityAllInRate    ← Stream ①
-
-spcTaxablePL   = netHire − depreciation − bankInterest
-taxShield      = −spcTaxablePL × taxRate%                      ← Stream ②
-
-[exit year only]
-residualToEquity = (poPriceMil − remainingDebt) − capGainsTax  ← Stream ③
-
-netCF = equityPrincipalReturn + equityInterestIncome
-      − bbcCommCost + taxShield + residualToEquity
-```
-
-### Depreciation (MOF 200DB → SL)
-
-Per Japanese Ministry of Finance rules (耐用年数省令 別表第一):
-
-```
-dbRate = 2 / usefulLife          (200% declining balance)
-db     = bookValue × dbRate
-sl     = bookValue / remainingYears
-
-method = sl ≥ db ? "SL" : "DB"   (switch to SL permanently when SL first exceeds DB)
-
-year1  = ordinary + special       (special = VP × specialDeprPct%, year 1 only)
-```
-
-### IRR Algorithm
-
-Newton-Raphson (1,000 iterations, 1e-8 tolerance) with automatic fallback to bisection (2,000 iterations, bracket [−0.9, 5.0]).
-
-Returns `null` if no valid IRR found (e.g., all-negative cashflows).
-
-### Purchase Option Default Decline
-
-```
-annualDecline = vesselPrice / amortYrs     (same as fixed hire)
-poPriceYrN    = vesselPrice − annualDecline × N
-```
-
-This tracks the remaining financing balance. Any year can be manually overridden.
+| Item | Detail |
+|------|--------|
+| Corporation Tax | 23.2% standard rate |
+| Local business tax | ~4.2% |
+| Defense surtax | ~3.2% |
+| **Effective rate default** | **30.62%** (fully adjustable) |
+| Depreciation method | **200% Declining Balance → Straight-Line** switch when SL ≥ DB (post-FY2012 MOF ordinance) |
+| Special depreciation | 18–32% of cost in Year 1 for MLIT-certified advanced vessels |
+| Foreign-flag vessels | 12-year flat useful life (MOF 耐用年数省令 Beppyō 1, その他のもの) |
+| Japanese-flag vessels | Type-specific: 11–15 years per MOF schedule |
+| LPG carriers | Use oil tanker useful life per NTA Circular 2-4-2 |
 
 ---
 
-## Key Assumptions & Limitations
-
-| Assumption | Detail |
-|---|---|
-| Annual periods | No intra-year granularity, no day-count conventions (Actual/360 etc.) |
-| Treasury comparison | Simple annual compounding; not actual bond math |
-| No salvage value | Depreciation runs to zero; no residual book value assumption |
-| No negative equity at exit | Assumes PO price ≥ remaining bank debt |
-| No rehedging model | Swap cost is a fixed annual input; no roll cost or basis risk |
-| `leaseTerm` input | Currently stored as state but not yet connected to cashflow model |
-| Tax shield timing | Shield/liability assumed realised in same year as P&L (no tax deferral) |
-| Static tax rate | No progressive rates, no local tax differentiation by municipality |
-| Special depr eligibility | No modelling of MLIT qualifying criteria; user-set |
-| One charterer | Single credit counterparty; no re-letting or off-hire scenarios |
-
----
-
-## Vessel Types & MOF Lives
-
-| Vessel | JP Life | Foreign Life | MOF Category |
-|---|---|---|---|
-| Bulk Carrier ≥2,000 GT | 15 yr | 12 yr | その他 |
-| Bulk Carrier <2,000 GT | 14 yr | 12 yr | その他 |
-| Oil Tanker ≥2,000 GT | 13 yr | 12 yr | 油そう船 |
-| Oil Tanker <2,000 GT | 11 yr | 12 yr | 油そう船 |
-| Chemical Tanker | 10 yr | 12 yr | 薬品そう船 |
-| LPG Carrier | 13 yr | 12 yr | 油そう船 |
-| LNG Carrier ≥2,000 GT | 15 yr | 12 yr | その他 |
-| Container ≥2,000 GT | 15 yr | 12 yr | その他 |
-| Container <2,000 GT | 14 yr | 12 yr | その他 |
-| Car Carrier / PCC | 15 yr | 12 yr | その他 |
-| General Cargo ≥2,000 GT | 15 yr | 12 yr | その他 |
-| Car Ferry | 11 yr | 12 yr | カーフェリー |
-| Tugboat | 12 yr | 10 yr | ひき船 |
-| Fishing Vessel ≥500 GT | 12 yr | 8 yr | 漁船 |
-| Fishing Vessel <500 GT | 9 yr | 8 yr | 漁船 |
-
-Special depreciation for MLIT-qualifying advanced vessels:
-- **Japanese flag**: 20–32% Year-1 bonus
-- **Foreign flag (PAN/LBR/MHL)**: 18–30% Year-1 bonus
-
----
-
-## Technical Architecture
-
-| Aspect | Detail |
-|---|---|
-| Framework | React 18 (CDN) |
-| Build | None — Babel Standalone transpiles JSX in-browser |
-| Deployment | GitHub Pages (single `index.html`) |
-| State | `useState` hooks only, no Redux |
-| Computation | `useMemo` — recalculates full model on any input change |
-| Styling | Inline styles only — no CSS framework |
-| Dependencies | React 18, ReactDOM 18, Babel Standalone (all CDN) |
-| Theme | Tokyo Night (`#1a1b26` bg, `#7aa2f7` blue, `#9ece6a` green, `#e0af68` orange, `#bb9af7` purple) |
-
-### File Structure
+## Codebase Architecture
 
 ```
-JOLCO-Calculator-V3/
-├── index.html          ← Full app (HTML + JSX inlined, auto-generated)
-├── jolco-v3.jsx        ← Source JSX (edit this, regenerate index.html)
-├── jolco-logo.png      ← Tokyo Night themed JOLCO logo
-└── README.md           ← This file
+jolco-v3.jsx     ← Single-file React component (source of truth)
+index.html       ← Self-contained build: Babel transpiles JSX in-browser via CDN
+jolco-logo.png   ← Tokyo Night-themed JOLCO logo (auto-generated from original)
+jolco img.png    ← Original JOLCO logo (source)
 ```
 
-### Regenerating index.html
+### Key functions
 
-After editing `jolco-v3.jsx`, run:
+| Function | Purpose |
+|----------|---------|
+| `solveIRR(cf, guess)` | Newton-Raphson IRR solver with bisection fallback; robust sign-flip detection |
+| `computeDepr(cost, life, specialPct)` | Full MOF 200%-DB → SL schedule with Year-1 special depreciation |
+| `JOLCOv3()` | Main React component — all state, memos, and UI in one place |
+| `useMemo → R{}` | Core financial model; produces all cashflows, IRR, stream totals, commissions |
 
-```python
-python3 -c "
-with open('jolco-v3.jsx') as f: jsx = f.read()
-jsx = jsx.replace('import React, { useState, useMemo } from \"react\";\n', '')
-jsx = jsx.replace('export default function JOLCOv3()', 'function JOLCOv3()')
-# ... wrap in HTML boilerplate
-"
+### All user-adjustable state variables
+
+| State | Default | Description |
+|-------|---------|-------------|
+| `vesselPrice` | $29.4M | Vessel purchase price |
+| `debtPct` | 70% | Bank debt as % of VP (shown dynamically throughout) |
+| `amortYrs` | 15 yr | Amortization period |
+| `leaseTerm` | 10 yr | BBC lease term |
+| `jpyBaseRate` | 0.10% | TONA/TIBOR JPY base rate |
+| `bankSpreadBps` | 50 bps | Bank credit spread over JPY base |
+| `swapCostBps` | 45 bps | USD/JPY cross-currency basis swap cost |
+| `sofrRate` | 4.30% | USD SOFR reference rate |
+| `spreadBps` | 280 bps | Equity/charterer spread over SOFR |
+| `saleCommission` | 2.0% | Vessel purchase brokerage |
+| `bbcCommission` | 1.25% | Annual bareboat charter brokerage on gross hire |
+| `taxRate` | 30.62% | Effective Japanese corporate tax rate |
+| `specialDeprPct` | 0% | Year-1 special depreciation % (MLIT advanced vessels) |
+| `treasuryYield` | 4.25% | US Treasury yield for risk-free comparison |
+| `poFirstYear` / `poLastYear` | 5 / 10 | PO exercise window |
+| `exerciseYear` | 10 | Chosen PO exercise year |
+| `poOverrides` | {} | Per-year manual PO price overrides |
+
+### Financial model per year (useMemo)
+
+```
+CASH IN TO SPC:
+  Fixed hire       = VP / amortYrs                              (principal, rate-insensitive)
+  Variable hire    = outstandingDebt   × bankAllInRate          (JPY bank interest, hedged USD)
+                   + outstandingEquity × equityAllInRate        (equity return component)
+  BBC Commission   = totalHire × bbcCommission%                 (deducted — reduces SPC P&L)
+  Net hire         = totalHire − bbcCommCost
+
+CASH OUT TO BANK (always senior):
+  bankPrincipal    = annualPrincipal × debtPct%
+  bankInterest     = outstandingDebt × bankAllInRate
+
+NET TO EQUITY:
+  equityPrincipal  = annualPrincipal × equityPct%              (return OF capital)
+  hireSpread       = outstandingEquity × equityAllInRate        (return ON capital — Stream ①)
+  netCF            = equityPrincipal + hireSpread − bbcCommCost + taxShield + residual
+
+SPC TAXABLE P&L:
+  = netHire − depreciation − bankInterest
+  taxShield        = −spcTaxablePL × taxRate%                  (Stream ②: +ve = tax saved)
+
+RESIDUAL (exit year only):
+  grossResidual    = poPriceMil − remainingDebt
+  capGainTax       = max(0, poPriceMil − bookValue) × taxRate%
+  residualToEquity = grossResidual − capGainTax                 (Stream ③)
+
+YEAR 0:
+  equityCF[0]      = −(equity + saleCommCost)
+  bankAllInRate    = (jpyBaseRate + bankSpreadBps/100)/100 + swapCostBps/10000
+  equityAllInRate  = (sofrRate + spreadBps/100)/100
 ```
 
-Or simply use the project's existing build pattern.
+---
+
+## UI Tabs
+
+| Tab | Contents |
+|-----|---------|
+| **Deal Inputs** | KPI summary row at top (all 3 streams + IRR + MoIC, all dynamic); 3 input columns: Vessel & Structure, Charter & Interest (split JPY loan / USD hire), Purchase Options & Tax |
+| **Depreciation Scale** | Year-by-year horizontal bar chart of DB→SL depreciation; clickable MOF rate index for all 15 vessel types |
+| **Equity Cashflows** | Full waterfall (equity in → sale comm → streams ① ② ③ → profit); clickable year-by-year table with per-year hire breakdown drill-down; equation view |
+| **vs Treasury** | Side-by-side JOLCO blended IRR vs US Treasury compounded on same equity deployed; spread in bps with qualitative commentary |
 
 ---
 
-## Return Stream Economics — Deep Dive
+## Purchase Option Schedule
 
-### Stream ① — Why it Exists
-
-The SPC borrows JPY at ~1% (bankAllInRate after swap) but the BBC hire formula charges the charterer SOFR + 280bps (~7.1%) on the equity portion of the outstanding balance. That ~610bps differential on the equity balance ($8.82M at 70/30 split on $29.4M) generates roughly **$626k/yr** in Year 1, declining as the balance amortises.
-
-### Stream ② — The Tax Shield Mechanics
-
-In Years 1–3, accelerated DB depreciation ($3.9M Yr1, $3.4M Yr2...) creates large losses in the SPC. These flow via the TK to the Japanese investor's personal/corporate tax return, offsetting other income at 30.62%. In later years, as depreciation falls below hire income, the SPC posts profits and the investor pays additional tax. The **net tax shield** is typically positive and peaks in Year 1.
-
-With special depreciation (e.g. 20%), Yr1 depreciation = ordinary + $5.88M bonus → much larger early-year shield, often making the blended IRR meaningfully higher.
-
-### Stream ③ — The PO Economics
-
-At Year 10 (default), the charterer exercises the PO at ~$9.8M (auto-decline). Remaining bank debt is ~$9.24M. Gross residual = ~$560k. Book value after 10yr DB→SL depreciation is near zero, so the entire PO price may be subject to capital gains tax at 30.62%, potentially making Stream ③ negative or marginal. Adjusting the PO price upward significantly improves IRR.
+- **Auto-generated:** PO price = `VP − (VP / amortYrs) × year` (tracks remaining financing balance).
+- **Per-year editable inline** (purple border = overridden; "reset" to revert to auto).
+- **Final year = Obligation** (charterer must buy regardless).
+- **Exercise year** freely selectable within the PO window.
 
 ---
 
-## Glossary
+## Deployment — GitHub Pages
 
-| Term | Meaning |
-|---|---|
-| **JOLCO** | Japanese Operating Lease with Call Option |
-| **TK** | Tokumei Kumiai (匿名組合) — Japanese silent partnership |
-| **SPC** | Special Purpose Company — the vessel-owning entity |
-| **BBC** | Bareboat Charter — charterer takes full operational control |
-| **MOF** | Ministry of Finance (Japan) — sets depreciation rules |
-| **MLIT** | Ministry of Land, Infrastructure, Transport and Tourism — sets special depr eligibility |
-| **TONA** | Tokyo Overnight Average Rate — JPY risk-free rate |
-| **TIBOR** | Tokyo Interbank Offered Rate — JPY term rate |
-| **SOFR** | Secured Overnight Financing Rate — USD risk-free rate |
-| **PO** | Purchase Option — charterer's right (and eventual obligation) to buy |
-| **DB** | Declining Balance depreciation method |
-| **SL** | Straight-Line depreciation method |
-| **IRR** | Internal Rate of Return |
-| **MoIC** | Multiple on Invested Capital |
-| **bps** | Basis Points (1 bps = 0.01%) |
+The app is a **single self-contained HTML file** (`index.html`). No build step, no Node.js, no server.
+
+```bash
+# Open locally
+open index.html
+
+# Push to GitHub (Pages serves automatically from main branch root)
+git push origin main
+```
+
+> **Do not serve `jolco-v3.jsx` directly.** GitHub Pages cannot execute JSX. Always use `index.html`, which bundles Babel standalone to transpile JSX in-browser.
 
 ---
 
-*For questions, raise an issue on [GitHub](https://github.com/sriniwas512/JOLCO-Calculator-V3/issues).*
+## Legal / Regulatory References
+
+| Reference | Relevance |
+|-----------|----------|
+| Corporation Tax Act Art. 31 | Depreciation deduction rules |
+| MOF Ordinance 耐用年数省令 Beppyō 1 (別表第一) | Vessel statutory useful lives by type and flag |
+| Special Measures Taxation Act | Special depreciation (MLIT advanced vessels) |
+| NTA Circular 2-4-2 | LPG carriers classified as oil tankers for depreciation |
+| Commercial Code Art. 535–542 | Tokumei Kumiai (TK) silent partnership structure |
+| Ship Act Arts. 4–19 | Japanese-flag registration requirement (determines useful life category) |
+
+---
+
+*Built for shipping finance professionals. All defaults represent a realistic base case — every single parameter is user-adjustable.*

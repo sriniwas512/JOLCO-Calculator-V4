@@ -367,9 +367,9 @@ export default function JOLCOv3() {
             <div style={{ gridColumn: "1 / -1", ...C, background: "linear-gradient(135deg, #1a1b26, #1e2030)" }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 }}>
                 <div style={{ padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" }}>
-                  <div style={{ fontSize: 9, color: "#565f89", textTransform: "uppercase", letterSpacing: "0.06em" }}>① Charter Hire Spread</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>${$d(R.totalStream1 / 1e6, 2)}M</div>
-                  <div style={{ fontSize: 9, color: "#565f89" }}>Cash from hire after debt service</div>
+                  <div style={{ fontSize: 9, color: "#565f89", textTransform: "uppercase", letterSpacing: "0.06em" }}>① Charter Hire (net BBC comm)</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>${$d((R.totalStream1 - R.totalBbcComm) / 1e6, 2)}M</div>
+                  <div style={{ fontSize: 9, color: "#565f89" }}>Hire spread after debt service &amp; {bbcCommission}% BBC brokerage</div>
                 </div>
                 <div style={{ padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" }}>
                   <div style={{ fontSize: 9, color: "#565f89", textTransform: "uppercase", letterSpacing: "0.06em" }}>② Tax Shield (Net)</div>
@@ -561,7 +561,7 @@ export default function JOLCOv3() {
                 {[
                   { l: "Yr1 Total", v: `${(R.depr[0]?.total / R.VP * 100).toFixed(1)}%`, c: "#bb9af7" },
                   { l: "3yr Cumul", v: `${(R.depr.slice(0, 3).reduce((s, d) => s + d.total, 0) / R.VP * 100).toFixed(1)}%`, c: "#7aa2f7" },
-                  { l: "Tax Shield (Lease)", v: `$${$d(R.totalTaxShield / 1e6, 2)}M`, c: "#9ece6a" },
+                  { l: "Tax Shield (Lease)", v: `$${$d(R.totalStream2 / 1e6, 2)}M`, c: "#9ece6a" },
                   { l: "DB→SL", v: `Yr ${R.depr.findIndex(d => d.method === "SL") + 1 || "N/A"}`, c: "#e0af68" },
                 ].map((x, i) => (
                   <div key={i} style={{ textAlign: "center" }}>
@@ -794,7 +794,7 @@ export default function JOLCOv3() {
                   {/* Totals row */}
                   <tr style={{ borderTop: "2px solid #3b4261", background: "#1e2030" }}>
                     <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#c0caf5", fontWeight: 700 }}>Σ</td>
-                    <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#9ece6a", fontWeight: 700 }}>${$(R.totalStream1)}</td>
+                    <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#9ece6a", fontWeight: 700 }}>${$(R.totalStream1 - R.totalBbcComm)}</td>
                     <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#bb9af7", fontWeight: 700 }}>${$(R.totalStream2)}</td>
                     <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#e0af68", fontWeight: 700 }}>${$(R.totalStream3)}</td>
                     <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#c0caf5", fontWeight: 700 }}>${$(R.jolcoProfit)}</td>
@@ -833,7 +833,7 @@ export default function JOLCOv3() {
                 <div style={{ fontSize: 10, color: "#565f89", marginBottom: 12 }}>Equity IRR (all 3 streams combined)</div>
                 {[
                   { l: `Equity Deployed (${100-debtPct}%+comm)`, v: `$${$d(R.totalEquityDeployed / 1e6, 2)}M`, c: "#7aa2f7" },
-                  { l: "① Hire Spread", v: `$${$d(R.totalStream1 / 1e6, 2)}M`, c: "#9ece6a" },
+                  { l: "① Hire Spread (net BBC comm)", v: `$${$d((R.totalStream1 - R.totalBbcComm) / 1e6, 2)}M`, c: "#9ece6a" },
                   { l: "② Tax Shield (Net)", v: `$${$d(R.totalStream2 / 1e6, 2)}M`, c: "#bb9af7" },
                   { l: "③ Residual / PO", v: `$${$d(R.totalStream3 / 1e6, 2)}M`, c: "#e0af68" },
                   { l: "Total Profit", v: `$${$d(R.jolcoProfit / 1e6, 2)}M`, c: R.jolcoProfit >= 0 ? "#9ece6a" : "#f7768e" },
