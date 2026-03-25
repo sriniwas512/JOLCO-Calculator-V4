@@ -162,8 +162,7 @@ export default function JOLCOv3() {
   // because the PO tracks the remaining financing balance
   const [poFirstYear, setPoFirstYear] = useState(5);
   const [poLastYear, setPoLastYear] = useState(10);
-  const [poAnnualDecline, setPoAnnualDecline] = useState(null); // null = auto from vessel/amort
-  const effectiveDecline = poAnnualDecline != null ? poAnnualDecline : vesselPrice / amortYrs;
+  const effectiveDecline = vesselPrice / amortYrs;
 
   // Auto-generate schedule but allow per-year overrides
   const [poOverrides, setPoOverrides] = useState({}); // { [yr]: price } for manual edits
