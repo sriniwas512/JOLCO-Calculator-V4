@@ -450,8 +450,8 @@ export default function JOLCOv3() {
               <Inp label="Lease (BBC) Term" value={leaseTerm} onChange={(v) => {
                 setLeaseTerm(v);
                 setPoLastYear(v);
+                setExerciseYear(v);
                 if (poFirstYear > v) setPoFirstYear(Math.max(1, v - 1));
-                if (exerciseYear > v) setExerciseYear(v);
               }} unit="yrs" help="BBC duration — how long charterer pays hire. Often shorter than amort period. Last PO / obligation syncs to this." min={1} max={25} />
               <div style={{ padding: "6px 8px", borderRadius: 4, background: "#1e2030", marginBottom: 8, fontSize: 9, color: "#565f89", lineHeight: 1.5 }}>
                 {amortYrs !== leaseTerm && (
