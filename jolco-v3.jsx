@@ -397,11 +397,35 @@ export default function JOLCOv3() {
               <Inp label="Lease (BBC) Term" value={leaseTerm} onChange={setLeaseTerm} unit="yrs" help="Must be ≤ amortization period" min={1} max={25} />
               <Inp label="SOFR Rate" value={sofrRate} onChange={setSofrRate} unit="%" step={0.1} />
               <Inp label="Spread over SOFR" value={spreadBps} onChange={setSpreadBps} unit="bps" step={10} />
-              <div style={{ padding: 10, borderRadius: 6, background: "#1e2030", border: "1px solid #292e42" }}>
-                <div style={{ fontSize: 9, color: "#565f89" }}>MONTHLY FIXED HIRE</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>${$(R.monthlyFixed / 1)}<span style={{ fontSize: 10, color: "#565f89" }}>/mo</span></div>
-                <div style={{ fontSize: 9, color: "#565f89", marginTop: 4 }}>ALL-IN RATE: {(R.allInRate * 100).toFixed(2)}% (SOFR + spread)</div>
-              </div>
+              {(() => {
+                const mFixed = R.monthlyFixed;
+                const mVariable = R.VP * R.allInRate / 12;
+                const mTotal = mFixed + mVariable;
+                return (
+                  <div style={{ padding: 10, borderRadius: 6, background: "#1e2030", border: "1px solid #292e42" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 8, color: "#565f89", textTransform: "uppercase", marginBottom: 2 }}>Fixed (Principal)</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>${$(mFixed)}<span style={{ fontSize: 9, color: "#565f89" }}>/mo</span></div>
+                        <div style={{ fontSize: 8, color: "#565f89", marginTop: 1 }}>VP ÷ {amortYrs}yr ÷ 12</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 8, color: "#7aa2f7", textTransform: "uppercase", marginBottom: 2 }}>Variable (Interest)</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#7aa2f7", fontFamily: F }}>${$(mVariable)}<span style={{ fontSize: 9, color: "#565f89" }}>/mo</span></div>
+                        <div style={{ fontSize: 8, color: "#565f89", marginTop: 1 }}>Yr1 · {(R.allInRate * 100).toFixed(2)}% all-in</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 8, color: "#e0af68", textTransform: "uppercase", marginBottom: 2 }}>Total (Yr 1)</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#e0af68", fontFamily: F }}>${$(mTotal)}<span style={{ fontSize: 9, color: "#565f89" }}>/mo</span></div>
+                        <div style={{ fontSize: 8, color: "#565f89", marginTop: 1 }}>Fixed + Variable</div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 9, color: "#565f89", borderTop: "1px solid #292e42", paddingTop: 6 }}>
+                      All-in rate: {(R.allInRate * 100).toFixed(2)}% (SOFR {sofrRate}% + {spreadBps}bps) · Variable declines each year as balance amortises
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <div style={C}>
