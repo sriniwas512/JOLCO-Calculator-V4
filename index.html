@@ -375,6 +375,42 @@ function JOLCOv3() {
         {/* ═══ DEAL INPUTS ═══ */}
         {tab === "deal" && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+
+            {/* Summary — The 3 Return Streams */}
+            <div style={{ gridColumn: "1 / -1", ...C, background: "linear-gradient(135deg, #1a1b26, #1e2030)" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 }}>
+                <div style={{ padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" }}>
+                  <div style={{ fontSize: 9, color: "#565f89", textTransform: "uppercase", letterSpacing: "0.06em" }}>① Charter Hire Spread</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>${$d(R.totalStream1 / 1e6, 2)}M</div>
+                  <div style={{ fontSize: 9, color: "#565f89" }}>Cash from hire after debt service</div>
+                </div>
+                <div style={{ padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" }}>
+                  <div style={{ fontSize: 9, color: "#565f89", textTransform: "uppercase", letterSpacing: "0.06em" }}>② Tax Shield (Net)</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: "#bb9af7", fontFamily: F }}>${$d(R.totalStream2 / 1e6, 2)}M</div>
+                  <div style={{ fontSize: 9, color: "#565f89" }}>Tax saved from depreciation losses</div>
+                </div>
+                <div style={{ padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" }}>
+                  <div style={{ fontSize: 9, color: "#565f89", textTransform: "uppercase", letterSpacing: "0.06em" }}>③ Residual / PO Play</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: "#e0af68", fontFamily: F }}>${$d(R.totalStream3 / 1e6, 2)}M</div>
+                  <div style={{ fontSize: 9, color: "#565f89" }}>PO exercise net of debt & cap gains tax</div>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+                {[
+                  { l: "Equity Deployed", v: `$${$d(R.totalEquityDeployed / 1e6, 1)}M`, c: "#7aa2f7" },
+                  { l: "Total Profit", v: `$${$d(R.jolcoProfit / 1e6, 2)}M`, c: R.jolcoProfit >= 0 ? "#9ece6a" : "#f7768e" },
+                  { l: "Equity IRR", v: pct(R.equityIRR), c: "#e0af68", sub: "hire + residual" },
+                  { l: "Blended IRR", v: pct(R.blendedIRR), c: R.spread > 0 ? "#9ece6a" : "#f7768e", sub: "incl. tax shield" },
+                  { l: "vs UST", v: R.spread != null ? (R.spread > 0 ? "+" : "") + (R.spread * 10000).toFixed(0) + "bps" : "—", c: R.spread > 0 ? "#9ece6a" : "#f7768e" },
+                ].map((x, i) => (
+                  <div key={i} style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 9, color: "#565f89", textTransform: "uppercase" }}>{x.l}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: x.c, fontFamily: F }}>{x.v}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div style={C}>
               {H("#9ece6a", "Vessel & Structure")}
               <div style={{ marginBottom: 12 }}>
@@ -421,26 +457,19 @@ function JOLCOv3() {
                 const mTotal = mFixed + mVariable;
                 return (
                   <div style={{ padding: 10, borderRadius: 6, background: "#1e2030", border: "1px solid #292e42" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
-                      <div>
-                        <div style={{ fontSize: 8, color: "#565f89", textTransform: "uppercase", marginBottom: 2 }}>Fixed (Principal)</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>${$(mFixed)}<span style={{ fontSize: 9, color: "#565f89" }}>/mo</span></div>
-                        <div style={{ fontSize: 8, color: "#565f89", marginTop: 1 }}>VP ÷ {amortYrs}yr ÷ 12</div>
+                    {[
+                      { label: "Fixed Hire (Principal)", val: mFixed, color: "#9ece6a", sub: `VP ÷ ${amortYrs}yr ÷ 12 · rate-insensitive` },
+                      { label: "Variable Hire (Interest · Yr1)", val: mVariable, color: "#7aa2f7", sub: `${(R.allInRate * 100).toFixed(2)}% all-in on full balance · declines as balance amortises` },
+                      { label: "Total Monthly Hire (Yr 1)", val: mTotal, color: "#e0af68", sub: "Fixed + Variable · total cost to charterer" },
+                    ].map((row, i, arr) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", paddingBottom: 8, marginBottom: i < arr.length - 1 ? 8 : 0, borderBottom: i < arr.length - 1 ? "1px solid #292e42" : "none" }}>
+                        <div>
+                          <div style={{ fontSize: 9, color: "#565f89", textTransform: "uppercase", marginBottom: 1 }}>{row.label}</div>
+                          <div style={{ fontSize: 8, color: "#3b4261" }}>{row.sub}</div>
+                        </div>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: row.color, fontFamily: F, whiteSpace: "nowrap", marginLeft: 8 }}>${$(row.val)}<span style={{ fontSize: 9, color: "#565f89" }}>/mo</span></div>
                       </div>
-                      <div>
-                        <div style={{ fontSize: 8, color: "#7aa2f7", textTransform: "uppercase", marginBottom: 2 }}>Variable (Interest)</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "#7aa2f7", fontFamily: F }}>${$(mVariable)}<span style={{ fontSize: 9, color: "#565f89" }}>/mo</span></div>
-                        <div style={{ fontSize: 8, color: "#565f89", marginTop: 1 }}>Yr1 · {(R.allInRate * 100).toFixed(2)}% all-in</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 8, color: "#e0af68", textTransform: "uppercase", marginBottom: 2 }}>Total (Yr 1)</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "#e0af68", fontFamily: F }}>${$(mTotal)}<span style={{ fontSize: 9, color: "#565f89" }}>/mo</span></div>
-                        <div style={{ fontSize: 8, color: "#565f89", marginTop: 1 }}>Fixed + Variable</div>
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 9, color: "#565f89", borderTop: "1px solid #292e42", paddingTop: 6 }}>
-                      All-in rate: {(R.allInRate * 100).toFixed(2)}% (SOFR {sofrRate}% + {spreadBps}bps) · Variable declines each year as balance amortises
-                    </div>
+                    ))}
                   </div>
                 );
               })()}
@@ -496,40 +525,6 @@ function JOLCOv3() {
               </div>
             </div>
 
-            {/* Summary — The 3 Return Streams */}
-            <div style={{ gridColumn: "1 / -1", ...C, background: "linear-gradient(135deg, #1a1b26, #1e2030)" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 }}>
-                <div style={{ padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" }}>
-                  <div style={{ fontSize: 9, color: "#565f89", textTransform: "uppercase", letterSpacing: "0.06em" }}>① Charter Hire Spread</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>${$d(R.totalStream1 / 1e6, 2)}M</div>
-                  <div style={{ fontSize: 9, color: "#565f89" }}>Cash from hire after debt service</div>
-                </div>
-                <div style={{ padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" }}>
-                  <div style={{ fontSize: 9, color: "#565f89", textTransform: "uppercase", letterSpacing: "0.06em" }}>② Tax Shield (Net)</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: "#bb9af7", fontFamily: F }}>${$d(R.totalStream2 / 1e6, 2)}M</div>
-                  <div style={{ fontSize: 9, color: "#565f89" }}>Tax saved from depreciation losses</div>
-                </div>
-                <div style={{ padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" }}>
-                  <div style={{ fontSize: 9, color: "#565f89", textTransform: "uppercase", letterSpacing: "0.06em" }}>③ Residual / PO Play</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: "#e0af68", fontFamily: F }}>${$d(R.totalStream3 / 1e6, 2)}M</div>
-                  <div style={{ fontSize: 9, color: "#565f89" }}>PO exercise net of debt & cap gains tax</div>
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
-                {[
-                  { l: "Equity Deployed", v: `$${$d(R.totalEquityDeployed / 1e6, 1)}M`, c: "#7aa2f7" },
-                  { l: "Total Profit", v: `$${$d(R.jolcoProfit / 1e6, 2)}M`, c: R.jolcoProfit >= 0 ? "#9ece6a" : "#f7768e" },
-                  { l: "Equity IRR", v: pct(R.equityIRR), c: "#e0af68", sub: "hire + residual" },
-                  { l: "Blended IRR", v: pct(R.blendedIRR), c: R.spread > 0 ? "#9ece6a" : "#f7768e", sub: "incl. tax shield" },
-                  { l: "vs UST", v: R.spread != null ? (R.spread > 0 ? "+" : "") + (R.spread * 10000).toFixed(0) + "bps" : "—", c: R.spread > 0 ? "#9ece6a" : "#f7768e" },
-                ].map((x, i) => (
-                  <div key={i} style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 9, color: "#565f89", textTransform: "uppercase" }}>{x.l}</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: x.c, fontFamily: F }}>{x.v}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         )}
 
