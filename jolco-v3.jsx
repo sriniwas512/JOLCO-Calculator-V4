@@ -566,6 +566,9 @@ export default function JOLCOv3() {
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
             <div style={C}>
               {H("#bb9af7", `Depreciation Scale — ${vType.label}`)}
+              <div style={{ padding: "8px 10px", borderRadius: 5, background: "#1e2030", marginBottom: 12, fontSize: 9, color: "#565f89", lineHeight: 1.6 }}>
+                <span style={{ color: "#e0af68", fontWeight: 700 }}>DB (定率法)</span> applies <span style={{ color: "#e0af68" }}>2 ÷ useful life</span> as a rate to the <em>remaining</em> book value each year — front loads depreciation. Switches to <span style={{ color: "#9ece6a", fontWeight: 700 }}>SL (定額法)</span> the moment straight line on remaining balance beats DB, per MOF post FY2012 rules. The MOF only sets the useful life; this schedule is the computed output.
+              </div>
               <Slider label="Special Depreciation Rate" value={specialDeprPct} onChange={(v) => setSpecialDeprPct(Math.min(v, flagInfo.specialMax))} min={0} max={flagInfo.specialMax} step={1} unit="%" help={`${flagInfo.specialMin}–${flagInfo.specialMax}% for ${flagInfo.label} · slide to see how Yr1 bonus changes the IRR`} />
               <div style={{ display: "flex", gap: 12, marginBottom: 12, fontSize: 10 }}>
                 <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 12, height: 8, borderRadius: 2, background: "#7aa2f7", display: "inline-block" }} /> Ordinary</span>
