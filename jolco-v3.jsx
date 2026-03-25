@@ -353,8 +353,8 @@ export default function JOLCOv3() {
             </div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#a9b1d6" }}>Sriniwas Ghate</div>
-            <div style={{ fontSize: 10, color: "#565f89" }}>Gibson Shipbrokers, Singapore</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#ffffff" }}>Sriniwas Ghate</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#ffffff" }}>Gibson Shipbrokers, Singapore</div>
           </div>
         </div>
       </div>
