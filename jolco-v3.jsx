@@ -109,15 +109,15 @@ const F = "'JetBrains Mono', monospace";
 function Inp({ label, value, onChange, unit, help, min, max, step }) {
   return (
     <div style={{ marginBottom: 13 }}>
-      <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" }}>{label}</label>
+      <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" }}>{label}</label>
       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
         <input type="number" value={value} onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
           min={min} max={max} step={step || 1}
-          style={{ width: "100%", padding: "7px 9px", borderRadius: 5, border: "1px solid #3b4261", background: "#1a1b26", color: "#c0caf5", fontSize: 13, fontFamily: F, outline: "none" }}
+          style={{ width: "100%", padding: "7px 9px", borderRadius: 5, border: "1px solid #3b4261", background: "#1a1b26", color: "#c0caf5", fontSize: 14, fontFamily: F, outline: "none" }}
           onFocus={(e) => e.target.style.borderColor = "#7aa2f7"} onBlur={(e) => e.target.style.borderColor = "#3b4261"} />
-        {unit && <span style={{ fontSize: 10, color: "#a9b1d6", minWidth: 32 }}>{unit}</span>}
+        {unit && <span style={{ fontSize: 11, color: "#a9b1d6", minWidth: 32 }}>{unit}</span>}
       </div>
-      {help && <div style={{ fontSize: 9, color: "#a9b1d6", marginTop: 2 }}>{help}</div>}
+      {help && <div style={{ fontSize: 10, color: "#a9b1d6", marginTop: 2 }}>{help}</div>}
     </div>
   );
 }
@@ -126,16 +126,16 @@ function Slider({ label, value, onChange, min, max, step, unit, help }) {
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-        <label style={{ fontSize: 10, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", fontFamily: F, textTransform: "uppercase" }}>{label}</label>
-        <span style={{ fontSize: 14, fontWeight: 700, color: "#bb9af7", fontFamily: F }}>{value}{unit}</span>
+        <label style={{ fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", fontFamily: F, textTransform: "uppercase" }}>{label}</label>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "#bb9af7", fontFamily: F }}>{value}{unit}</span>
       </div>
       <input type="range" value={value} onChange={(e) => onChange(parseFloat(e.target.value))}
         min={min} max={max} step={step || 1}
         style={{ width: "100%", height: 6, borderRadius: 3, appearance: "none", background: `linear-gradient(to right, #7aa2f7 ${((value - min) / (max - min)) * 100}%, #3b4261 ${((value - min) / (max - min)) * 100}%)`, cursor: "pointer", outline: "none" }} />
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#a9b1d6", marginTop: 2 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#a9b1d6", marginTop: 2 }}>
         <span>{min}{unit}</span><span>{max}{unit}</span>
       </div>
-      {help && <div style={{ fontSize: 9, color: "#a9b1d6", marginTop: 2 }}>{help}</div>}
+      {help && <div style={{ fontSize: 10, color: "#a9b1d6", marginTop: 2 }}>{help}</div>}
     </div>
   );
 }
@@ -343,8 +343,8 @@ export default function JOLCOv3() {
   }, [vesselPrice, debtPct, amortYrs, sofrRate, spreadBps, jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission, taxRate, foreignInterestTaxPct, usefulLife, specialDeprPct, treasuryYield, flagId, effectiveExerciseYear, poSchedule]);
 
   const C = { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginBottom: 14 };
-  const H = (color, text) => <div style={{ fontSize: 12, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 }}><span style={{ color }}>●</span>{text}</div>;
-  const T = (t, label) => <button onClick={() => setTab(t)} style={{ padding: "9px 16px", fontSize: 11, fontFamily: F, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", background: tab === t ? "#1a1b26" : "transparent", color: tab === t ? "#7aa2f7" : "#6b7299", border: "none", borderBottom: tab === t ? "2px solid #7aa2f7" : "2px solid transparent", cursor: "pointer" }}>{label}</button>;
+  const H = (color, text) => <div style={{ fontSize: 13, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 }}><span style={{ color }}>●</span>{text}</div>;
+  const T = (t, label) => <button onClick={() => setTab(t)} style={{ padding: "9px 16px", fontSize: 12, fontFamily: F, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", background: tab === t ? "#1a1b26" : "transparent", color: tab === t ? "#7aa2f7" : "#6b7299", border: "none", borderBottom: tab === t ? "2px solid #7aa2f7" : "2px solid transparent", cursor: "pointer" }}>{label}</button>;
 
   return (
     <div style={{ minHeight: "100vh", background: "#16161e", fontFamily: "'Inter', sans-serif", color: "#a9b1d6" }}>
@@ -353,13 +353,13 @@ export default function JOLCOv3() {
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <img src="updated bg image.png" alt="JOLCO" style={{ height: 48, width: "auto", objectFit: "contain" }} />
             <div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#c0caf5", fontFamily: F }}>Equity IRR Calculator <span style={{ fontSize: 11, color: "#9ece6a" }}>v3</span></div>
-              <div style={{ fontSize: 10, color: "#a9b1d6" }}>Financed ~{debtPct}% by bank debt, ~{100-debtPct}% by Japanese TK (silent partnership) equity investors · MOF Depreciation · Tax Shield Analysis</div>
+              <div style={{ fontSize: 19, fontWeight: 700, color: "#c0caf5", fontFamily: F }}>Equity IRR Calculator <span style={{ fontSize: 12, color: "#9ece6a" }}>v3</span></div>
+              <div style={{ fontSize: 11, color: "#a9b1d6" }}>Financed ~{debtPct}% by bank debt, ~{100-debtPct}% by Japanese TK (silent partnership) equity investors · MOF Depreciation · Tax Shield Analysis</div>
             </div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#ffffff" }}>Sriniwas Ghate</div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#ffffff" }}>Gibson Shipbrokers, Singapore</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#ffffff" }}>Created By Sriniwas Ghate</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#ffffff" }}>Gibson Shipbrokers, Singapore</div>
           </div>
         </div>
       </div>
@@ -378,22 +378,22 @@ export default function JOLCOv3() {
             <div style={{ gridColumn: "1 / -1", ...C, background: "linear-gradient(135deg, #1a1b26, #1e2030)" }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 }}>
                 <div style={{ padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" }}>
-                  <div style={{ fontSize: 9, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" }}>① Charter Hire (net BBC comm)</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>${$d((R.totalStream1 - R.totalBbcComm) / 1e6, 2)}M</div>
-                  <div style={{ fontSize: 9, color: "#a9b1d6" }}>Hire spread after debt service &amp; {bbcCommission}% BBC brokerage</div>
-                  <div style={{ marginTop: 5, fontSize: 8, fontWeight: 700, color: "#9ece6a44", background: "rgba(158,206,106,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" }}>CASH YIELD · pre-tax · from charter hire</div>
+                  <div style={{ fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" }}>① Charter Hire (net BBC comm)</div>
+                  <div style={{ fontSize: 23, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>${$d((R.totalStream1 - R.totalBbcComm) / 1e6, 2)}M</div>
+                  <div style={{ fontSize: 10, color: "#a9b1d6" }}>Hire spread after debt service &amp; {bbcCommission}% BBC brokerage</div>
+                  <div style={{ marginTop: 5, fontSize: 9, fontWeight: 700, color: "#9ece6a44", background: "rgba(158,206,106,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" }}>CASH YIELD · pre-tax · from charter hire</div>
                 </div>
                 <div style={{ padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" }}>
-                  <div style={{ fontSize: 9, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" }}>② Tax Shield (Net)</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: "#bb9af7", fontFamily: F }}>${$d(R.totalStream2 / 1e6, 2)}M</div>
-                  <div style={{ fontSize: 9, color: "#a9b1d6" }}>Tax saved from depreciation losses</div>
-                  <div style={{ marginTop: 5, fontSize: 8, fontWeight: 700, color: "#bb9af744", background: "rgba(187,154,247,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" }}>TAX ARBITRAGE · depends on investor tax capacity</div>
+                  <div style={{ fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" }}>② Tax Shield (Net)</div>
+                  <div style={{ fontSize: 23, fontWeight: 700, color: "#bb9af7", fontFamily: F }}>${$d(R.totalStream2 / 1e6, 2)}M</div>
+                  <div style={{ fontSize: 10, color: "#a9b1d6" }}>Tax saved from depreciation losses</div>
+                  <div style={{ marginTop: 5, fontSize: 9, fontWeight: 700, color: "#bb9af744", background: "rgba(187,154,247,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" }}>TAX ARBITRAGE · depends on investor tax capacity</div>
                 </div>
                 <div style={{ padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" }}>
-                  <div style={{ fontSize: 9, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" }}>③ Residual / PO Play</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: "#e0af68", fontFamily: F }}>${$d(R.totalStream3 / 1e6, 2)}M</div>
-                  <div style={{ fontSize: 9, color: "#a9b1d6" }}>PO exercise net of debt & cap gains tax</div>
-                  <div style={{ marginTop: 5, fontSize: 8, fontWeight: 700, color: "#e0af6844", background: "rgba(224,175,104,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" }}>TERMINAL EVENT · PO exercise at exit</div>
+                  <div style={{ fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" }}>③ Residual / PO Play</div>
+                  <div style={{ fontSize: 23, fontWeight: 700, color: "#e0af68", fontFamily: F }}>${$d(R.totalStream3 / 1e6, 2)}M</div>
+                  <div style={{ fontSize: 10, color: "#a9b1d6" }}>PO exercise net of debt & cap gains tax</div>
+                  <div style={{ marginTop: 5, fontSize: 9, fontWeight: 700, color: "#e0af6844", background: "rgba(224,175,104,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" }}>TERMINAL EVENT · PO exercise at exit</div>
                 </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
@@ -405,8 +405,8 @@ export default function JOLCOv3() {
                   { l: "vs UST", v: R.spread != null ? (R.spread > 0 ? "+" : "") + (R.spread * 10000).toFixed(0) + "bps" : "—", c: R.spread > 0 ? "#9ece6a" : "#f7768e" },
                 ].map((x, i) => (
                   <div key={i} style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 9, color: "#a9b1d6", textTransform: "uppercase" }}>{x.l}</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: x.c, fontFamily: F }}>{x.v}</div>
+                    <div style={{ fontSize: 10, color: "#a9b1d6", textTransform: "uppercase" }}>{x.l}</div>
+                    <div style={{ fontSize: 19, fontWeight: 700, color: x.c, fontFamily: F }}>{x.v}</div>
                   </div>
                 ))}
               </div>
@@ -415,34 +415,34 @@ export default function JOLCOv3() {
             <div style={C}>
               {H("#9ece6a", "Vessel & Structure")}
               <div style={{ marginBottom: 12 }}>
-                <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" }}>Vessel Type</label>
-                <select value={vesselTypeId} onChange={(e) => setVesselTypeId(e.target.value)} style={{ width: "100%", padding: "7px 8px", borderRadius: 5, border: "1px solid #3b4261", background: "#1a1b26", color: "#c0caf5", fontSize: 12, fontFamily: F }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" }}>Vessel Type</label>
+                <select value={vesselTypeId} onChange={(e) => setVesselTypeId(e.target.value)} style={{ width: "100%", padding: "7px 8px", borderRadius: 5, border: "1px solid #3b4261", background: "#1a1b26", color: "#c0caf5", fontSize: 13, fontFamily: F }}>
                   {VESSEL_DB.map(v => <option key={v.id} value={v.id}>{v.label} (JP:{v.jpLife}yr / For:{v.forLife}yr)</option>)}
                 </select>
               </div>
               <div style={{ marginBottom: 12 }}>
-                <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" }}>Flag State (SPC Registration)</label>
-                <select value={flagId} onChange={(e) => setFlagId(e.target.value)} style={{ width: "100%", padding: "7px 8px", borderRadius: 5, border: "1px solid #3b4261", background: "#1a1b26", color: "#c0caf5", fontSize: 12, fontFamily: F }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" }}>Flag State (SPC Registration)</label>
+                <select value={flagId} onChange={(e) => setFlagId(e.target.value)} style={{ width: "100%", padding: "7px 8px", borderRadius: 5, border: "1px solid #3b4261", background: "#1a1b26", color: "#c0caf5", fontSize: 13, fontFamily: F }}>
                   {FLAG_OPTIONS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
                 </select>
-                <div style={{ fontSize: 9, color: "#a9b1d6", marginTop: 2 }}>{flagInfo.desc} · Special depr: {flagInfo.specialMin}–{flagInfo.specialMax}%</div>
+                <div style={{ fontSize: 10, color: "#a9b1d6", marginTop: 2 }}>{flagInfo.desc} · Special depr: {flagInfo.specialMin}–{flagInfo.specialMax}%</div>
               </div>
               <div style={{ padding: 10, borderRadius: 6, background: "#1e2030", border: "1px solid #292e42", marginBottom: 10 }}>
-                <div style={{ fontSize: 9, color: "#a9b1d6", textTransform: "uppercase", marginBottom: 3 }}>Statutory Useful Life</div>
+                <div style={{ fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", marginBottom: 3 }}>Statutory Useful Life</div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                  <span style={{ fontSize: 24, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>{usefulLife}<span style={{ fontSize: 11, color: "#a9b1d6" }}>yr</span></span>
-                  <span style={{ fontSize: 10, color: "#a9b1d6" }}>DB: {(dbRate * 100).toFixed(1)}% · SL: {(1/usefulLife * 100).toFixed(2)}%</span>
+                  <span style={{ fontSize: 25, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>{usefulLife}<span style={{ fontSize: 12, color: "#a9b1d6" }}>yr</span></span>
+                  <span style={{ fontSize: 11, color: "#a9b1d6" }}>DB: {(dbRate * 100).toFixed(1)}% · SL: {(1/usefulLife * 100).toFixed(2)}%</span>
                 </div>
-                <div style={{ fontSize: 9, color: "#a9b1d6", marginTop: 2 }}>MOF: {vType.cat}{isJPFlag ? "" : " (foreign: その他のもの 12yr flat)"}</div>
+                <div style={{ fontSize: 10, color: "#a9b1d6", marginTop: 2 }}>MOF: {vType.cat}{isJPFlag ? "" : " (foreign: その他のもの 12yr flat)"}</div>
               </div>
               <Inp label="Vessel Price" value={vesselPrice} onChange={setVesselPrice} unit="$M" />
               <Inp label="Debt / Equity Split (Debt %)" value={debtPct} onChange={setDebtPct} unit="%" help={`${debtPct}% bank debt · ${100 - debtPct}% TK equity`} min={0} max={95} />
               <Inp label="Sale Commission" value={saleCommission} onChange={setSaleCommission} unit="%" help="Vessel purchase brokerage · paid upfront at Year 0" step={0.25} />
               <Inp label="BBC Commission" value={bbcCommission} onChange={setBbcCommission} unit="%" help="Annual bareboat charter brokerage on gross hire" step={0.25} />
               <div style={{ padding: 10, borderRadius: 6, background: "#1e2030", border: "1px solid #292e42", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                <div><div style={{ fontSize: 9, color: "#a9b1d6" }}>EQUITY ({100-debtPct}%)</div><div style={{ fontSize: 14, fontWeight: 700, color: "#7aa2f7", fontFamily: F }}>${$d(R.equity / 1e6, 1)}M</div></div>
-                <div><div style={{ fontSize: 9, color: "#f7768e" }}>+SALE COMM</div><div style={{ fontSize: 14, fontWeight: 700, color: "#f7768e", fontFamily: F }}>${$d(R.saleCommCost / 1e6, 2)}M</div></div>
-                <div><div style={{ fontSize: 9, color: "#a9b1d6" }}>DEBT ({debtPct}%)</div><div style={{ fontSize: 14, fontWeight: 700, color: "#e0af68", fontFamily: F }}>${$d(R.debt / 1e6, 1)}M</div></div>
+                <div><div style={{ fontSize: 10, color: "#a9b1d6" }}>EQUITY ({100-debtPct}%)</div><div style={{ fontSize: 15, fontWeight: 700, color: "#7aa2f7", fontFamily: F }}>${$d(R.equity / 1e6, 1)}M</div></div>
+                <div><div style={{ fontSize: 10, color: "#f7768e" }}>+SALE COMM</div><div style={{ fontSize: 15, fontWeight: 700, color: "#f7768e", fontFamily: F }}>${$d(R.saleCommCost / 1e6, 2)}M</div></div>
+                <div><div style={{ fontSize: 10, color: "#a9b1d6" }}>DEBT ({debtPct}%)</div><div style={{ fontSize: 15, fontWeight: 700, color: "#e0af68", fontFamily: F }}>${$d(R.debt / 1e6, 1)}M</div></div>
               </div>
             </div>
 
@@ -455,7 +455,7 @@ export default function JOLCOv3() {
                 setExerciseYear(v);
                 if (poFirstYear > v) setPoFirstYear(Math.max(1, v - 1));
               }} unit="yrs" help="BBC duration — how long charterer pays hire. Often shorter than amort period. Last PO / obligation syncs to this." min={1} max={25} />
-              <div style={{ padding: "6px 8px", borderRadius: 4, background: "#1e2030", marginBottom: 8, fontSize: 9, color: "#a9b1d6", lineHeight: 1.5 }}>
+              <div style={{ padding: "6px 8px", borderRadius: 4, background: "#1e2030", marginBottom: 8, fontSize: 10, color: "#a9b1d6", lineHeight: 1.5 }}>
                 {amortYrs !== leaseTerm && (
                   <span style={{ color: amortYrs > leaseTerm ? "#e0af68" : "#f7768e" }}>
                     {amortYrs > leaseTerm
@@ -465,14 +465,14 @@ export default function JOLCOv3() {
                 )}
                 {amortYrs === leaseTerm && <span>Amort period = Lease term ({amortYrs}yr) — debt fully repaid at lease end, minimal PO residual</span>}
               </div>
-              <div style={{ marginTop: 10, marginBottom: 4, fontSize: 9, fontWeight: 700, color: "#e0af68", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #292e42", paddingBottom: 4 }}>Bank Loan — JPY (SPC borrows from Japanese bank)</div>
+              <div style={{ marginTop: 10, marginBottom: 4, fontSize: 10, fontWeight: 700, color: "#e0af68", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #292e42", paddingBottom: 4 }}>Bank Loan — JPY (SPC borrows from Japanese bank)</div>
               <Inp label="JPY Base Rate (TONA/TIBOR)" value={jpyBaseRate} onChange={setJpyBaseRate} unit="%" step={0.05} help="Near-zero JPY policy rate · typically 0.05–0.50%" />
               <Inp label="Bank Spread over JPY Base" value={bankSpreadBps} onChange={setBankSpreadBps} unit="bps" step={5} help="Credit spread charged by lending bank" />
               <Inp label="USD/JPY Cross-Currency Swap Cost" value={swapCostBps} onChange={setSwapCostBps} unit="bps" step={5} help="Cost to swap JPY loan obligation into USD cash flows" />
-              <div style={{ padding: "6px 8px", borderRadius: 4, background: "#1e2030", marginBottom: 10, fontSize: 9, color: "#a9b1d6" }}>
+              <div style={{ padding: "6px 8px", borderRadius: 4, background: "#1e2030", marginBottom: 10, fontSize: 10, color: "#a9b1d6" }}>
                 Effective USD cost of bank debt: <span style={{ color: "#e0af68", fontWeight: 700 }}>{(jpyBaseRate + bankSpreadBps/100 + swapCostBps/100).toFixed(2)}%</span> · JPY {(jpyBaseRate + bankSpreadBps/100).toFixed(2)}% + {swapCostBps}bps swap
               </div>
-              <div style={{ marginBottom: 4, fontSize: 9, fontWeight: 700, color: "#7aa2f7", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #292e42", paddingBottom: 4 }}>BBC Hire Rate — USD (SPC lends to charterer)</div>
+              <div style={{ marginBottom: 4, fontSize: 10, fontWeight: 700, color: "#7aa2f7", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #292e42", paddingBottom: 4 }}>BBC Hire Rate — USD (SPC lends to charterer)</div>
               <Inp label="SOFR Rate (USD)" value={sofrRate} onChange={setSofrRate} unit="%" step={0.1} help="USD reference rate for BBC hire calculation" />
               <Inp label="Equity Spread over SOFR" value={spreadBps} onChange={setSpreadBps} unit="bps" step={10} help="Spread reflecting charterer credit + vessel risk" />
               {(() => {
@@ -491,10 +491,10 @@ export default function JOLCOv3() {
                     ].map((row, i, arr) => (
                       <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", paddingBottom: 8, marginBottom: i < arr.length - 1 ? 8 : 0, borderBottom: i < arr.length - 1 ? "1px solid #292e42" : "none" }}>
                         <div>
-                          <div style={{ fontSize: 9, color: "#a9b1d6", textTransform: "uppercase", marginBottom: 1 }}>{row.label}</div>
-                          <div style={{ fontSize: 8, color: "#3b4261" }}>{row.sub}</div>
+                          <div style={{ fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", marginBottom: 1 }}>{row.label}</div>
+                          <div style={{ fontSize: 9, color: "#6b7299" }}>{row.sub}</div>
                         </div>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: row.color, fontFamily: F, whiteSpace: "nowrap", marginLeft: 8 }}>${$(row.val)}<span style={{ fontSize: 9, color: "#a9b1d6" }}>/mo</span></div>
+                        <div style={{ fontSize: 17, fontWeight: 700, color: row.color, fontFamily: F, whiteSpace: "nowrap", marginLeft: 8 }}>${$(row.val)}<span style={{ fontSize: 10, color: "#a9b1d6" }}>/mo</span></div>
                       </div>
                     ))}
                   </div>
@@ -511,41 +511,41 @@ export default function JOLCOv3() {
               </div>
               {/* Exercise Year Selector */}
               <div style={{ marginBottom: 10 }}>
-                <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" }}>Exercise at Year</label>
-                <select value={exerciseYear} onChange={(e) => setExerciseYear(parseInt(e.target.value))} style={{ width: "100%", padding: "7px 8px", borderRadius: 5, border: `1px solid ${effectiveExerciseYear > amortYrs ? "#f7768e" : "#7aa2f7"}`, background: "#1a1b26", color: "#c0caf5", fontSize: 12, fontFamily: F }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" }}>Exercise at Year</label>
+                <select value={exerciseYear} onChange={(e) => setExerciseYear(parseInt(e.target.value))} style={{ width: "100%", padding: "7px 8px", borderRadius: 5, border: `1px solid ${effectiveExerciseYear > amortYrs ? "#f7768e" : "#7aa2f7"}`, background: "#1a1b26", color: "#c0caf5", fontSize: 13, fontFamily: F }}>
                   {poSchedule.map(p => (
                     <option key={p.yr} value={p.yr}>Year {p.yr} — ${$d(p.price, 1)}M {p.obligatory ? "(Obligation)" : ""}</option>
                   ))}
                 </select>
                 {effectiveExerciseYear > amortYrs && (
-                  <div style={{ marginTop: 5, padding: "6px 8px", borderRadius: 4, background: "rgba(247,118,142,0.1)", border: "1px solid #f7768e44", fontSize: 9, color: "#f7768e", lineHeight: 1.5 }}>
+                  <div style={{ marginTop: 5, padding: "6px 8px", borderRadius: 4, background: "rgba(247,118,142,0.1)", border: "1px solid #f7768e44", fontSize: 10, color: "#f7768e", lineHeight: 1.5 }}>
                     ⚠ Exercise year ({effectiveExerciseYear}) exceeds amortization period ({amortYrs} yrs). After year {amortYrs} all balances are zero — hire, interest, and residual will be zero. Extend the amortization period or reduce the exercise year.
                   </div>
                 )}
               </div>
               {/* Auto-decline info */}
-              <div style={{ padding: 8, borderRadius: 5, background: "#1e2030", marginBottom: 10, fontSize: 9, color: "#a9b1d6", lineHeight: 1.5 }}>
+              <div style={{ padding: 8, borderRadius: 5, background: "#1e2030", marginBottom: 10, fontSize: 10, color: "#a9b1d6", lineHeight: 1.5 }}>
                 <strong style={{ color: "#bb9af7" }}>Default PO decline:</strong> ${$d(effectiveDecline, 2)}M/yr (= Vessel Price ÷ Amort Period). PO tracks remaining financing balance. Edit any year below to override.
               </div>
               {/* PO Schedule — editable per year */}
-              <div style={{ fontSize: 8, color: "#a9b1d6", display: "flex", gap: 4, marginBottom: 4, fontFamily: F }}>
+              <div style={{ fontSize: 9, color: "#a9b1d6", display: "flex", gap: 4, marginBottom: 4, fontFamily: F }}>
                 <span style={{ width: 32 }}>YEAR</span><span style={{ width: 76 }}>PO PRICE</span><span style={{ flex: 1 }}>STATUS</span>
               </div>
               {poSchedule.map((p, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2, padding: "3px 4px", borderRadius: 4, background: p.yr === effectiveExerciseYear ? "rgba(122,162,247,0.08)" : "transparent" }}>
-                  <span style={{ fontSize: 10, color: p.yr === effectiveExerciseYear ? "#7aa2f7" : "#a9b1d6", fontFamily: F, width: 32, fontWeight: p.yr === effectiveExerciseYear ? 700 : 400 }}>Yr{p.yr}</span>
+                  <span style={{ fontSize: 11, color: p.yr === effectiveExerciseYear ? "#7aa2f7" : "#a9b1d6", fontFamily: F, width: 32, fontWeight: p.yr === effectiveExerciseYear ? 700 : 400 }}>Yr{p.yr}</span>
                   <input type="number" value={p.price} step={0.1}
                     onChange={(e) => {
                       const val = parseFloat(e.target.value);
                       if (!isNaN(val)) setPoOverrides(prev => ({ ...prev, [p.yr]: val }));
                     }}
-                    style={{ width: 68, padding: "3px 6px", borderRadius: 4, border: `1px solid ${p.isOverridden ? "#bb9af7" : "#3b4261"}`, background: "#1a1b26", color: p.isOverridden ? "#bb9af7" : "#c0caf5", fontSize: 11, fontFamily: F }} />
-                  <span style={{ fontSize: 9, color: "#a9b1d6" }}>$M</span>
+                    style={{ width: 68, padding: "3px 6px", borderRadius: 4, border: `1px solid ${p.isOverridden ? "#bb9af7" : "#3b4261"}`, background: "#1a1b26", color: p.isOverridden ? "#bb9af7" : "#c0caf5", fontSize: 12, fontFamily: F }} />
+                  <span style={{ fontSize: 10, color: "#a9b1d6" }}>$M</span>
                   {p.isOverridden && (
                     <button onClick={() => setPoOverrides(prev => { const n = { ...prev }; delete n[p.yr]; return n; })}
-                      style={{ fontSize: 8, color: "#f7768e", background: "none", border: "none", cursor: "pointer", padding: 0 }}>reset</button>
+                      style={{ fontSize: 9, color: "#f7768e", background: "none", border: "none", cursor: "pointer", padding: 0 }}>reset</button>
                   )}
-                  <span style={{ fontSize: 7, color: p.obligatory ? "#f7768e" : p.yr === effectiveExerciseYear ? "#7aa2f7" : "#a9b1d6", marginLeft: "auto", fontFamily: F }}>
+                  <span style={{ fontSize: 8, color: p.obligatory ? "#f7768e" : p.yr === effectiveExerciseYear ? "#7aa2f7" : "#a9b1d6", marginLeft: "auto", fontFamily: F }}>
                     {p.obligatory ? "OBLIG" : p.yr === effectiveExerciseYear ? "◀ EXIT" : "OPT"}
                   </span>
                 </div>
@@ -566,11 +566,11 @@ export default function JOLCOv3() {
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
             <div style={C}>
               {H("#bb9af7", `Depreciation Scale — ${vType.label}`)}
-              <div style={{ padding: "8px 10px", borderRadius: 5, background: "#1e2030", marginBottom: 12, fontSize: 9, color: "#a9b1d6", lineHeight: 1.6 }}>
+              <div style={{ padding: "8px 10px", borderRadius: 5, background: "#1e2030", marginBottom: 12, fontSize: 10, color: "#a9b1d6", lineHeight: 1.6 }}>
                 <span style={{ color: "#e0af68", fontWeight: 700 }}>DB (定率法)</span> applies <span style={{ color: "#e0af68" }}>2 ÷ useful life</span> as a rate to the <em>remaining</em> book value each year — front loads depreciation. Switches to <span style={{ color: "#9ece6a", fontWeight: 700 }}>SL (定額法)</span> the moment straight line on remaining balance beats DB, per MOF post FY2012 rules. The MOF only sets the useful life; this schedule is the computed output.
               </div>
               <Slider label="Special Depreciation Rate" value={specialDeprPct} onChange={(v) => setSpecialDeprPct(Math.min(v, flagInfo.specialMax))} min={0} max={flagInfo.specialMax} step={1} unit="%" help={`${flagInfo.specialMin}–${flagInfo.specialMax}% for ${flagInfo.label} · slide to see how Yr1 bonus changes the IRR`} />
-              <div style={{ display: "flex", gap: 12, marginBottom: 12, fontSize: 10 }}>
+              <div style={{ display: "flex", gap: 12, marginBottom: 12, fontSize: 11 }}>
                 <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 12, height: 8, borderRadius: 2, background: "#7aa2f7", display: "inline-block" }} /> Ordinary</span>
                 {specialDeprPct > 0 && <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 12, height: 8, borderRadius: 2, background: "#bb9af7", display: "inline-block" }} /> Special</span>}
               </div>
@@ -583,14 +583,14 @@ export default function JOLCOv3() {
                   const inLease = d.yr <= effectiveExerciseYear;
                   return (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, opacity: inLease ? 1 : 0.4 }}>
-                      <div style={{ width: 20, fontSize: 10, color: "#a9b1d6", fontFamily: F, textAlign: "right" }}>{d.yr}</div>
+                      <div style={{ width: 20, fontSize: 11, color: "#a9b1d6", fontFamily: F, textAlign: "right" }}>{d.yr}</div>
                       <div style={{ flex: 1, height: 22, background: "#16161e", borderRadius: 4, position: "relative", overflow: "hidden" }}>
                         <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${ordW}%`, background: "#7aa2f7", borderRadius: "4px 0 0 4px" }} />
                         <div style={{ position: "absolute", left: `${ordW}%`, top: 0, height: "100%", width: `${specW}%`, background: "#bb9af7" }} />
-                        <span style={{ position: "absolute", right: 6, top: 3, fontSize: 9, fontFamily: F, color: "#c0caf5" }}>{pctOfVessel.toFixed(1)}%</span>
+                        <span style={{ position: "absolute", right: 6, top: 3, fontSize: 10, fontFamily: F, color: "#c0caf5" }}>{pctOfVessel.toFixed(1)}%</span>
                       </div>
-                      <div style={{ width: 65, fontSize: 10, color: "#a9b1d6", fontFamily: F, textAlign: "right" }}>${$(d.total)}</div>
-                      <div style={{ width: 20, fontSize: 9, color: d.method === "DB" ? "#e0af68" : "#9ece6a", fontFamily: F }}>{d.method}</div>
+                      <div style={{ width: 65, fontSize: 11, color: "#a9b1d6", fontFamily: F, textAlign: "right" }}>${$(d.total)}</div>
+                      <div style={{ width: 20, fontSize: 10, color: d.method === "DB" ? "#e0af68" : "#9ece6a", fontFamily: F }}>{d.method}</div>
                     </div>
                   );
                 });
@@ -603,8 +603,8 @@ export default function JOLCOv3() {
                   { l: "DB→SL", v: `Yr ${R.depr.findIndex(d => d.method === "SL") + 1 || "N/A"}`, c: "#e0af68" },
                 ].map((x, i) => (
                   <div key={i} style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 8, color: "#a9b1d6", textTransform: "uppercase" }}>{x.l}</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: x.c, fontFamily: F }}>{x.v}</div>
+                    <div style={{ fontSize: 9, color: "#a9b1d6", textTransform: "uppercase" }}>{x.l}</div>
+                    <div style={{ fontSize: 17, fontWeight: 700, color: x.c, fontFamily: F }}>{x.v}</div>
                   </div>
                 ))}
               </div>
@@ -613,8 +613,8 @@ export default function JOLCOv3() {
             {/* Reference Index */}
             <div style={C}>
               {H("#e0af68", "MOF Rate Index")}
-              <div style={{ fontSize: 9, color: "#a9b1d6", marginBottom: 8 }}>耐用年数省令 別表第一 · Click to select</div>
-              <div style={{ display: "flex", gap: 4, marginBottom: 6, fontSize: 8, color: "#a9b1d6", fontFamily: F }}>
+              <div style={{ fontSize: 10, color: "#a9b1d6", marginBottom: 8 }}>耐用年数省令 別表第一 · Click to select</div>
+              <div style={{ display: "flex", gap: 4, marginBottom: 6, fontSize: 9, color: "#a9b1d6", fontFamily: F }}>
                 <div style={{ flex: 1 }}>VESSEL TYPE</div>
                 <div style={{ width: 32, textAlign: "right" }}>JP</div>
                 <div style={{ width: 32, textAlign: "right" }}>FOR</div>
@@ -626,10 +626,10 @@ export default function JOLCOv3() {
                 const yr1 = 2 / life * 100;
                 return (
                   <div key={v.id} onClick={() => setVesselTypeId(v.id)} style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 6px", borderRadius: 4, marginBottom: 2, cursor: "pointer", background: isActive ? "rgba(122,162,247,0.08)" : "transparent" }}>
-                    <div style={{ flex: 1, fontSize: 9, color: isActive ? "#7aa2f7" : "#a9b1d6", fontWeight: isActive ? 700 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.label}</div>
-                    <div style={{ fontSize: 9, fontFamily: F, color: isJPFlag ? "#9ece6a" : "#a9b1d6", width: 32, textAlign: "right", fontWeight: isJPFlag ? 600 : 400 }}>{v.jpLife}</div>
-                    <div style={{ fontSize: 9, fontFamily: F, color: !isJPFlag ? "#9ece6a" : "#a9b1d6", width: 32, textAlign: "right", fontWeight: !isJPFlag ? 600 : 400 }}>{v.forLife}</div>
-                    <div style={{ fontSize: 9, fontFamily: F, color: "#e0af68", width: 42, textAlign: "right" }}>{yr1.toFixed(1)}%</div>
+                    <div style={{ flex: 1, fontSize: 10, color: isActive ? "#7aa2f7" : "#a9b1d6", fontWeight: isActive ? 700 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.label}</div>
+                    <div style={{ fontSize: 10, fontFamily: F, color: isJPFlag ? "#9ece6a" : "#a9b1d6", width: 32, textAlign: "right", fontWeight: isJPFlag ? 600 : 400 }}>{v.jpLife}</div>
+                    <div style={{ fontSize: 10, fontFamily: F, color: !isJPFlag ? "#9ece6a" : "#a9b1d6", width: 32, textAlign: "right", fontWeight: !isJPFlag ? 600 : 400 }}>{v.forLife}</div>
+                    <div style={{ fontSize: 10, fontFamily: F, color: "#e0af68", width: 42, textAlign: "right" }}>{yr1.toFixed(1)}%</div>
                   </div>
                 );
               })}
@@ -656,12 +656,12 @@ export default function JOLCOv3() {
 
                 const Row = ({ val, label, explain, color, neg = false }) => (
                   <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", gap: "0 18px", marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #1e2030" }}>
-                    <div style={{ textAlign: "right", fontFamily: F, fontSize: 15, fontWeight: 700, color, paddingTop: 1 }}>
+                    <div style={{ textAlign: "right", fontFamily: F, fontSize: 16, fontWeight: 700, color, paddingTop: 1 }}>
                       {neg ? "−" : "+"}&thinsp;${$d(Math.abs(val) / 1e6, 2)}M
                     </div>
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: "#c0caf5", marginBottom: 2 }}>{label}</div>
-                      <div style={{ fontSize: 9, color: "#a9b1d6", lineHeight: 1.55 }}>{explain}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#c0caf5", marginBottom: 2 }}>{label}</div>
+                      <div style={{ fontSize: 10, color: "#a9b1d6", lineHeight: 1.55 }}>{explain}</div>
                     </div>
                   </div>
                 );
@@ -685,16 +685,16 @@ export default function JOLCOv3() {
                       explain={`At exit, the charterer exercises the purchase option at $${$d(R.poPriceMil/1e6,1)}M. The SPC first repays the outstanding bank debt from these proceeds. The balance goes to equity investors, less capital gains tax on (PO price − tax book value of the vessel at that date). If the PO price is below remaining debt, equity receives nothing from Stream ③.`} />
                     <div style={{ borderTop: "1px dashed #3b4261", margin: "4px 0 12px 0" }} />
                     <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", gap: "0 18px" }}>
-                      <div style={{ textAlign: "right", fontFamily: F, fontSize: 18, fontWeight: 700, color: profit >= 0 ? "#9ece6a" : "#f7768e", paddingTop: 4 }}>
+                      <div style={{ textAlign: "right", fontFamily: F, fontSize: 19, fontWeight: 700, color: profit >= 0 ? "#9ece6a" : "#f7768e", paddingTop: 4 }}>
                         = ${$d(totalReturned / 1e6, 2)}M
                       </div>
                       <div style={{ paddingTop: 4 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#c0caf5" }}>Total Returned · {$d(totalReturned / eq, 2)}x MoIC</div>
-                        <div style={{ fontSize: 10, color: "#a9b1d6", marginTop: 3 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#c0caf5" }}>Total Returned · {$d(totalReturned / eq, 2)}x MoIC</div>
+                        <div style={{ fontSize: 11, color: "#a9b1d6", marginTop: 3 }}>
                           <span style={{ color: profit >= 0 ? "#9ece6a" : "#f7768e", fontWeight: 700 }}>${$d(profit / 1e6, 2)}M net profit</span>
-                          <span style={{ color: "#3b4261" }}> · </span>
+                          <span style={{ color: "#6b7299" }}> · </span>
                           <span style={{ color: "#e0af68", fontWeight: 700 }}>{pct(R.blendedIRR)} blended IRR</span>
-                          <span style={{ color: "#3b4261" }}> · </span>
+                          <span style={{ color: "#6b7299" }}> · </span>
                           <span style={{ color: "#bb9af7", fontWeight: 700 }}>{pct(R.equityIRR)} pre-tax IRR</span>
                         </div>
                       </div>
@@ -707,24 +707,24 @@ export default function JOLCOv3() {
             {/* ── YEAR-BY-YEAR TABLE ── */}
             <div style={C}>
             {H("#9ece6a", "Three Return Streams — Year by Year")}
-            <div style={{ display: "flex", gap: 12, marginBottom: 12, fontSize: 10, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 12, marginBottom: 12, fontSize: 11, flexWrap: "wrap" }}>
               <span style={{ color: "#9ece6a" }}>● ① Hire Spread (net of BBC comm)</span>
               <span style={{ color: "#bb9af7" }}>● ② Tax Shield</span>
               <span style={{ color: "#e0af68" }}>● ③ Residual/PO</span>
             </div>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid #3b4261" }}>
                     {["Yr", "① Hire Spread", "② Tax Shield", "③ Residual", "Total CF", "Cumulative"].map(h => (
-                      <th key={h} style={{ padding: "6px 8px", textAlign: "right", color: "#a9b1d6", fontFamily: F, fontSize: 9, fontWeight: 600, textTransform: "uppercase" }}>{h}</th>
+                      <th key={h} style={{ padding: "6px 8px", textAlign: "right", color: "#a9b1d6", fontFamily: F, fontSize: 10, fontWeight: 600, textTransform: "uppercase" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   <tr style={{ borderBottom: "1px solid #1e2030", background: "#1e1e2e" }}>
                     <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: "#c0caf5" }}>0</td>
-                    <td colSpan={3} style={{ padding: "5px 8px", textAlign: "center", color: "#a9b1d6", fontSize: 10 }}>Equity ({100-debtPct}%) + Sale Comm ({saleCommission}%)</td>
+                    <td colSpan={3} style={{ padding: "5px 8px", textAlign: "center", color: "#a9b1d6", fontSize: 11 }}>Equity ({100-debtPct}%) + Sale Comm ({saleCommission}%)</td>
                     <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: "#f7768e", fontWeight: 600 }}>-${$(R.totalEquityDeployed)}</td>
                     <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: "#f7768e" }}>-${$(R.totalEquityDeployed)}</td>
                   </tr>
@@ -734,11 +734,11 @@ export default function JOLCOv3() {
                     <React.Fragment key={i}>
                     <tr style={{ borderBottom: isExpanded ? "none" : "1px solid #1e2030", background: y.yr === effectiveExerciseYear ? "rgba(122,162,247,0.04)" : "transparent" }}>
                       <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: "#c0caf5" }}>
-                        {y.yr}{y.yr === effectiveExerciseYear && <span style={{ color: "#7aa2f7", fontSize: 8, marginLeft: 2 }}>EXIT</span>}
+                        {y.yr}{y.yr === effectiveExerciseYear && <span style={{ color: "#7aa2f7", fontSize: 9, marginLeft: 2 }}>EXIT</span>}
                       </td>
                       <td onClick={() => setExpandedYear(isExpanded ? null : y.yr)}
                         style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: "#9ece6a", cursor: "pointer", textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 3 }}>
-                        ${$(y.hireSpread - y.bbcCommCost)} <span style={{ fontSize: 8, color: "#a9b1d6" }}>{isExpanded ? "▲" : "▼"}</span>
+                        ${$(y.hireSpread - y.bbcCommCost)} <span style={{ fontSize: 9, color: "#a9b1d6" }}>{isExpanded ? "▲" : "▼"}</span>
                       </td>
                       <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: y.taxShieldThisYear >= 0 ? "#bb9af7" : "#f7768e" }}>
                         {y.taxShieldThisYear >= 0 ? `$${$(y.taxShieldThisYear)}` : `-$${$(Math.abs(y.taxShieldThisYear))}`}
@@ -753,13 +753,13 @@ export default function JOLCOv3() {
                       <tr style={{ borderBottom: "1px solid #1e2030" }}>
                         <td colSpan={6} style={{ padding: 0 }}>
                           <div style={{ margin: "0 8px 8px", padding: 12, borderRadius: 6, background: "#16161e", border: "1px solid #3b4261" }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: "#c0caf5", marginBottom: 8, fontFamily: F }}>Year {y.yr} — Full Hire Breakdown</div>
-                            <div style={{ fontFamily: F, fontSize: 11, lineHeight: 2, color: "#a9b1d6" }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: "#c0caf5", marginBottom: 8, fontFamily: F }}>Year {y.yr} — Full Hire Breakdown</div>
+                            <div style={{ fontFamily: F, fontSize: 12, lineHeight: 2, color: "#a9b1d6" }}>
                               <div style={{ display: "flex", justifyContent: "space-between" }}>
                                 <span>Total BB Hire Received</span>
                                 <span style={{ color: "#c0caf5", fontWeight: 700 }}>${$(y.totalHire)}</span>
                               </div>
-                              <div style={{ paddingLeft: 12, fontSize: 10, color: "#a9b1d6" }}>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
                                 Sched. Amort.: ${$(y.fixedHire)}/yr (rate-insensitive) · Financing Return — Bank: ${$(y.variableHireBank)} ({((R.bankAllInRate)*100).toFixed(2)}% on ${$(y.outstandingDebt + y.bankPrincipal)} JPY bal.) · Financing Return — Equity: ${$(y.variableHireEquity)} ({((R.equityAllInRate)*100).toFixed(2)}% on ${$(y.outstandingEquity + y.equityPrincipalReturn)} bal.)
                               </div>
                               <div style={{ borderTop: "1px dashed #3b4261", marginTop: 4, paddingTop: 4 }} />
@@ -767,14 +767,14 @@ export default function JOLCOv3() {
                                 <span style={{ color: "#f7768e" }}>BBC Commission ({bbcCommission}%)</span>
                                 <span style={{ color: "#f7768e" }}>-${$(y.bbcCommCost)}</span>
                               </div>
-                              <div style={{ paddingLeft: 12, fontSize: 10, color: "#a9b1d6" }}>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
                                 Annual brokerage on gross hire · Net hire: ${$(y.netHire)}
                               </div>
-                              <div style={{ display: "flex", justifyContent: "space-between", paddingLeft: 12, fontSize: 10 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", paddingLeft: 12, fontSize: 11 }}>
                                 <span style={{ color: "#bb9af7" }}>BBC comm tax offset ({taxRate.toFixed(2)}% of commission)</span>
                                 <span style={{ color: "#bb9af7" }}>+${$(y.bbcCommCost * taxRate / 100)}</span>
                               </div>
-                              <div style={{ paddingLeft: 24, fontSize: 9, color: "#a9b1d6" }}>
+                              <div style={{ paddingLeft: 24, fontSize: 10, color: "#a9b1d6" }}>
                                 BBC commission is a deductible SPC expense → saves {taxRate.toFixed(2)}% tax on that amount via the TK P&amp;L
                               </div>
                               <div style={{ borderTop: "1px dashed #3b4261", marginTop: 4, paddingTop: 4 }} />
@@ -782,7 +782,7 @@ export default function JOLCOv3() {
                                 <span style={{ color: "#f7768e" }}>To Bank ({debtPct}%)</span>
                                 <span style={{ color: "#f7768e" }}>-${$(y.totalToBank)}</span>
                               </div>
-                              <div style={{ paddingLeft: 12, fontSize: 10, color: "#a9b1d6" }}>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
                                 Principal: ${$(y.bankPrincipal)} + Interest: ${$(y.bankInterest)}
                               </div>
                               <div style={{ borderTop: "1px dashed #3b4261", marginTop: 4, paddingTop: 4 }} />
@@ -791,15 +791,15 @@ export default function JOLCOv3() {
                                 <span style={{ color: "#9ece6a", fontWeight: 700 }}>${$(y.equityPrincipalReturn + y.equityInterestIncome - y.bbcCommCost)}</span>
                               </div>
                               <div style={{ paddingLeft: 12, marginTop: 2 }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
                                   <span style={{ color: "#7aa2f7" }}>Principal return (return OF capital)</span>
                                   <span style={{ color: "#7aa2f7" }}>${$(y.equityPrincipalReturn)}</span>
                                 </div>
-                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
                                   <span style={{ color: "#9ece6a" }}>Interest income (return ON capital)</span>
                                   <span style={{ color: "#9ece6a" }}>${$(y.equityInterestIncome)}</span>
                                 </div>
-                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
                                   <span style={{ color: "#f7768e" }}>Less BBC commission</span>
                                   <span style={{ color: "#f7768e" }}>-${$(y.bbcCommCost)}</span>
                                 </div>
@@ -819,7 +819,7 @@ export default function JOLCOv3() {
                     <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#bb9af7", fontWeight: 700 }}>${$(R.totalStream2)}</td>
                     <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#e0af68", fontWeight: 700 }}>${$(R.totalStream3)}</td>
                     <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#c0caf5", fontWeight: 700 }}>${$(R.jolcoProfit)}</td>
-                    <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#a9b1d6", fontSize: 9 }}>net of equity</td>
+                    <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#a9b1d6", fontSize: 10 }}>net of equity</td>
                   </tr>
                 </tbody>
               </table>
@@ -831,16 +831,16 @@ export default function JOLCOv3() {
                 { l: "MoIC", v: R.totalEquityDeployed > 0 ? $d((R.totalEquityDeployed + R.jolcoProfit) / R.totalEquityDeployed, 2) + "x" : "—", s: "Total returned / equity deployed", c: "#7aa2f7" },
               ].map((x, i) => (
                 <div key={i} style={{ textAlign: "center", padding: 12, borderRadius: 8, background: "#16161e" }}>
-                  <div style={{ fontSize: 9, color: "#a9b1d6", textTransform: "uppercase" }}>{x.l}</div>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: x.c, fontFamily: F }}>{x.v}</div>
-                  <div style={{ fontSize: 8, color: "#a9b1d6", marginTop: 2 }}>{x.s}</div>
+                  <div style={{ fontSize: 10, color: "#a9b1d6", textTransform: "uppercase" }}>{x.l}</div>
+                  <div style={{ fontSize: 23, fontWeight: 700, color: x.c, fontFamily: F }}>{x.v}</div>
+                  <div style={{ fontSize: 9, color: "#a9b1d6", marginTop: 2 }}>{x.s}</div>
                 </div>
               ))}
             </div>
-            <div style={{ marginTop: 12, padding: 14, borderRadius: 8, background: "#16161e", fontSize: 11, color: "#a9b1d6", lineHeight: 1.7 }}>
+            <div style={{ marginTop: 12, padding: 14, borderRadius: 8, background: "#16161e", fontSize: 12, color: "#a9b1d6", lineHeight: 1.7 }}>
               <strong style={{ color: "#c0caf5" }}>How to read this:</strong> The tax shield column shows tax you <em>didn't have to pay</em> because depreciation created paper losses. In early years it's positive (you're saving tax). In later years when depreciation runs out, it may go negative (you're now paying more tax than you would without the JOLCO). The net effect over the lease term is shown in the Σ row. All three streams together, timed correctly, give you the IRR.
             </div>
-            <div style={{ marginTop: 10, padding: 12, borderRadius: 8, background: "rgba(187,154,247,0.06)", border: "1px solid #bb9af733", fontSize: 10, color: "#a9b1d6", lineHeight: 1.6 }}>
+            <div style={{ marginTop: 10, padding: 12, borderRadius: 8, background: "rgba(187,154,247,0.06)", border: "1px solid #bb9af733", fontSize: 11, color: "#a9b1d6", lineHeight: 1.6 }}>
               <span style={{ color: "#bb9af7", fontWeight: 700 }}>⚠ Tax capacity caveat:</span> The Blended IRR assumes the investor has sufficient taxable income from other sources to fully absorb depreciation losses every year. If the investor's tax capacity is limited in any given year (e.g. they are already in a loss position), the Stream ② benefit will be deferred or lost entirely, and actual returns will be lower than shown.
             </div>
           </div>
@@ -852,9 +852,9 @@ export default function JOLCOv3() {
           <div>
             <div style={{ ...C, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
               <div style={{ padding: 18, borderRadius: 10, background: "#16161e", border: "1px solid #292e42" }}>
-                <div style={{ fontSize: 9, color: "#a9b1d6", textTransform: "uppercase", marginBottom: 6 }}>JOLCO Equity — Where the money comes from</div>
-                <div style={{ fontSize: 32, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>{pct(R.blendedIRR)}</div>
-                <div style={{ fontSize: 10, color: "#a9b1d6", marginBottom: 12 }}>Equity IRR (all 3 streams combined)</div>
+                <div style={{ fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", marginBottom: 6 }}>JOLCO Equity — Where the money comes from</div>
+                <div style={{ fontSize: 33, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>{pct(R.blendedIRR)}</div>
+                <div style={{ fontSize: 11, color: "#a9b1d6", marginBottom: 12 }}>Equity IRR (all 3 streams combined)</div>
                 {[
                   { l: `Equity Deployed (${100-debtPct}%+comm)`, v: `$${$d(R.totalEquityDeployed / 1e6, 2)}M`, c: "#7aa2f7" },
                   { l: "① Hire Spread (net BBC comm)", v: `$${$d((R.totalStream1 - R.totalBbcComm) / 1e6, 2)}M`, c: "#9ece6a" },
@@ -864,16 +864,16 @@ export default function JOLCOv3() {
                   { l: "MoIC", v: $d((R.totalEquityDeployed + R.jolcoProfit) / R.totalEquityDeployed, 2) + "x" },
                 ].map((r, i) => (
                   <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #1e2030" }}>
-                    <span style={{ fontSize: 10, color: "#a9b1d6" }}>{r.l}</span>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: r.c || "#c0caf5", fontFamily: F }}>{r.v}</span>
+                    <span style={{ fontSize: 11, color: "#a9b1d6" }}>{r.l}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: r.c || "#c0caf5", fontFamily: F }}>{r.v}</span>
                   </div>
                 ))}
               </div>
               <div style={{ padding: 18, borderRadius: 10, background: "#16161e", border: "1px solid #292e42" }}>
-                <div style={{ fontSize: 9, color: "#a9b1d6", textTransform: "uppercase", marginBottom: 6 }}>US Treasury — Risk-Free Alternative (post-tax)</div>
-                <div style={{ fontSize: 32, fontWeight: 700, color: "#7aa2f7", fontFamily: F }}>{$d(R.treasPostTaxYield, 2)}%</div>
-                <div style={{ fontSize: 10, color: "#a9b1d6", marginBottom: 4 }}>{effectiveExerciseYear}Y compound · Same equity deployed</div>
-                <div style={{ fontSize: 9, color: "#a9b1d6", marginBottom: 12, padding: "4px 6px", borderRadius: 3, background: "#1e2030" }}>
+                <div style={{ fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", marginBottom: 6 }}>US Treasury — Risk-Free Alternative (post-tax)</div>
+                <div style={{ fontSize: 33, fontWeight: 700, color: "#7aa2f7", fontFamily: F }}>{$d(R.treasPostTaxYield, 2)}%</div>
+                <div style={{ fontSize: 11, color: "#a9b1d6", marginBottom: 4 }}>{effectiveExerciseYear}Y compound · Same equity deployed</div>
+                <div style={{ fontSize: 10, color: "#a9b1d6", marginBottom: 12, padding: "4px 6px", borderRadius: 3, background: "#1e2030" }}>
                   Pre-tax: {$d(treasuryYield, 2)}% × (1 − {$d(foreignInterestTaxPct, 2)}% JP corp tax) = {$d(R.treasPostTaxYield, 2)}% after tax.<br/>US charges 0% withholding on Treasuries (Portfolio Interest Exemption, IRC §871h). Japan taxes at full corp rate — no preferential rate for corps on foreign interest. ~27% for SME TK investors, 30.62% for large corp.
                 </div>
                 {[
@@ -883,21 +883,21 @@ export default function JOLCOv3() {
                   { l: "MoIC", v: $d(R.treasTerminal / R.totalEquityDeployed, 2) + "x" },
                 ].map((r, i) => (
                   <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #1e2030" }}>
-                    <span style={{ fontSize: 10, color: "#a9b1d6" }}>{r.l}</span>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: r.c || "#c0caf5", fontFamily: F }}>{r.v}</span>
+                    <span style={{ fontSize: 11, color: "#a9b1d6" }}>{r.l}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: r.c || "#c0caf5", fontFamily: F }}>{r.v}</span>
                   </div>
                 ))}
               </div>
             </div>
             <div style={{ ...C, textAlign: "center", padding: 22, background: R.spread > 0 ? "linear-gradient(135deg, rgba(158,206,106,0.06), #1a1b26)" : "linear-gradient(135deg, rgba(247,118,142,0.06), #1a1b26)", border: `1px solid ${R.spread > 0 ? "#9ece6a33" : "#f7768e33"}` }}>
-              <div style={{ fontSize: 9, color: "#a9b1d6", textTransform: "uppercase" }}>Spread over Risk-Free</div>
-              <div style={{ fontSize: 28, fontWeight: 700, fontFamily: F, color: R.spread > 0 ? "#9ece6a" : "#f7768e" }}>
+              <div style={{ fontSize: 10, color: "#a9b1d6", textTransform: "uppercase" }}>Spread over Risk-Free</div>
+              <div style={{ fontSize: 29, fontWeight: 700, fontFamily: F, color: R.spread > 0 ? "#9ece6a" : "#f7768e" }}>
                 {R.spread != null ? (R.spread > 0 ? "+" : "") + (R.spread * 10000).toFixed(0) + " bps" : "—"}
               </div>
-              <div style={{ fontSize: 10, color: "#a9b1d6", marginTop: 2 }}>
+              <div style={{ fontSize: 11, color: "#a9b1d6", marginTop: 2 }}>
                 {R.spread != null ? `(${pct(R.blendedIRR)} equity IRR vs ${$d(R.treasPostTaxYield, 2)}% UST after-tax)` : ""}
               </div>
-              <div style={{ fontSize: 11, color: "#a9b1d6", marginTop: 8 }}>
+              <div style={{ fontSize: 12, color: "#a9b1d6", marginTop: 8 }}>
                 {R.spread > 0.03
                   ? "Strong premium over risk-free. JOLCO structure adding clear value."
                   : R.spread > 0.015
