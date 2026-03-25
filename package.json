@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "build": "npx esbuild entry.jsx --bundle --outfile=jolco-bundle.js --format=iife",
+    "watch": "npx esbuild entry.jsx --bundle --outfile=jolco-bundle.js --format=iife --watch"
+  },
   "devDependencies": {
     "@babel/cli": "^7.28.6",
     "@babel/core": "^7.29.0",
