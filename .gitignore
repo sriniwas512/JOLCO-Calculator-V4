@@ -1,1 +1,5 @@
 .DS_Store
+node_modules/
+.babelrc
+entry.jsx
+jolco-v3-compiled.js

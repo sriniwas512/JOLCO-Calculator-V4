@@ -152,9 +152,9 @@ export default function JOLCOv3() {
   const [leaseTerm, setLeaseTerm] = useState(10);
   const [sofrRate, setSofrRate] = useState(4.3);
   const [spreadBps, setSpreadBps] = useState(280);
-  const [jpyBaseRate, setJpyBaseRate] = useState(0.10);   // TONA/TIBOR
-  const [bankSpreadBps, setBankSpreadBps] = useState(50); // bps over JPY base
-  const [swapCostBps, setSwapCostBps] = useState(45);    // USD/JPY cross-currency basis
+  const [jpyBaseRate, setJpyBaseRate] = useState(0.50);   // TONA (BOJ rate ~0.50% as of mid-2024; raised from near-zero)
+  const [bankSpreadBps, setBankSpreadBps] = useState(100); // bps over TONA (80–130 bps for JOLCO non-recourse, per market data)
+  const [swapCostBps, setSwapCostBps] = useState(35);    // USD/JPY cross-currency basis (20–45 bps in 2024, narrowing trend)
   const [saleCommission, setSaleCommission] = useState(2.0);
   const [bbcCommission, setBbcCommission] = useState(1.25);
   // Purchase Option schedule
