@@ -184,6 +184,7 @@ export default function JOLCOv3() {
   const effectiveExerciseYear = Math.max(poFirstYear, Math.min(poLastYear, exerciseYear));
   // Tax
   const [taxRate, setTaxRate] = useState(30.62);
+  const [foreignInterestTaxPct, setForeignInterestTaxPct] = useState(20.315); // JP withholding on foreign bond interest (Portfolio Interest Exemption: 0% US WHT; Japan levies 20.315% on receipt)
   const [specialDeprPct, setSpecialDeprPct] = useState(0);
   const [treasuryYield, setTreasuryYield] = useState(4.25);
 
@@ -330,15 +331,16 @@ export default function JOLCOv3() {
     const blendedIRR = solveIRR(equityCF);
     const equityIRR = solveIRR(equityCF_noTax);
     const totalEquityDeployed = equity + saleCommCost;
-    // Post-tax Treasury yield — apples-to-apples vs JOLCO blendedIRR which includes tax shield
-    const treasPostTaxYield = treasuryYield * (1 - taxRate / 100);
+    // Post-tax Treasury yield — uses JP foreign interest tax rate (20.315% withholding), NOT the JOLCO corporate rate
+    // US Treasuries: 0% US withholding (Portfolio Interest Exemption, IRC §871); Japan levies 20.315% on receipt
+    const treasPostTaxYield = treasuryYield * (1 - foreignInterestTaxPct / 100);
     const treasTerminal = totalEquityDeployed * Math.pow(1 + treasPostTaxYield / 100, effectiveExerciseYear);
     const treasProfit = treasTerminal - totalEquityDeployed;
     const jolcoProfit = equityCF.reduce((a, b) => a + b, 0);
     const spread = blendedIRR != null ? blendedIRR - treasPostTaxYield / 100 : null;
 
     return { VP, debt, equity, saleCommCost, totalBbcComm, totalEquityDeployed, equityCF, equityCF_noTax, years, depr, blendedIRR, equityIRR, treasTerminal, treasProfit, jolcoProfit, spread, totalStream1, totalStream2, totalStream3, monthlyFixed, bankAllInRate, equityAllInRate, poPriceMil, treasPostTaxYield };
-  }, [vesselPrice, debtPct, amortYrs, sofrRate, spreadBps, jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission, taxRate, usefulLife, specialDeprPct, treasuryYield, flagId, effectiveExerciseYear, poSchedule]);
+  }, [vesselPrice, debtPct, amortYrs, sofrRate, spreadBps, jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission, taxRate, foreignInterestTaxPct, usefulLife, specialDeprPct, treasuryYield, flagId, effectiveExerciseYear, poSchedule]);
 
   const C = { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginBottom: 14 };
   const H = (color, text) => <div style={{ fontSize: 12, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 }}><span style={{ color }}>●</span>{text}</div>;
@@ -349,7 +351,7 @@ export default function JOLCOv3() {
       <div style={{ background: "linear-gradient(135deg, #1a1b26, #24283b)", borderBottom: "1px solid #292e42", padding: "20px 28px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <img src="jolco-logo.png" alt="JOLCO" style={{ height: 44, width: "auto", objectFit: "contain" }} />
+            <img src="latest jolco logo.png" alt="JOLCO" style={{ height: 44, width: "auto", objectFit: "contain" }} />
             <div>
               <div style={{ fontSize: 18, fontWeight: 700, color: "#c0caf5", fontFamily: F }}>Equity IRR Calculator <span style={{ fontSize: 11, color: "#9ece6a" }}>v3</span></div>
               <div style={{ fontSize: 10, color: "#565f89" }}>Financed ~{debtPct}% by bank debt, ~{100-debtPct}% by Japanese TK (silent partnership) equity investors · MOF Depreciation · Tax Shield Analysis</div>
@@ -551,6 +553,7 @@ export default function JOLCOv3() {
               <div style={{ marginTop: 10, borderTop: "1px solid #292e42", paddingTop: 10 }}>
                 <Inp label="Effective Tax Rate" value={taxRate} onChange={setTaxRate} unit="%" help={`${taxRate}% · std JP corp (23.2%) + local + defense surtax`} step={0.01} />
                 <Inp label="US Treasury Yield" value={treasuryYield} onChange={setTreasuryYield} unit="%" step={0.01} />
+                <Inp label="JP Tax on Foreign Interest" value={foreignInterestTaxPct} onChange={setForeignInterestTaxPct} unit="%" step={0.01} help="20.315% = 15% income tax + 2.1% reconstruction + 3% local. US levies 0% (Portfolio Interest Exemption)." />
                 <Slider label="Special Depreciation (Yr1)" value={specialDeprPct} onChange={(v) => setSpecialDeprPct(Math.min(v, flagInfo.specialMax))} min={0} max={flagInfo.specialMax} step={1} unit="%" help={`MLIT advanced vessels: ${flagInfo.specialMin}–${flagInfo.specialMax}% for ${flagInfo.label}`} />
               </div>
             </div>
@@ -892,7 +895,7 @@ export default function JOLCOv3() {
                 <div style={{ fontSize: 32, fontWeight: 700, color: "#7aa2f7", fontFamily: F }}>{$d(R.treasPostTaxYield, 2)}%</div>
                 <div style={{ fontSize: 10, color: "#565f89", marginBottom: 4 }}>{effectiveExerciseYear}Y compound · Same equity deployed</div>
                 <div style={{ fontSize: 9, color: "#565f89", marginBottom: 12, padding: "4px 6px", borderRadius: 3, background: "#1e2030" }}>
-                  Pre-tax: {$d(treasuryYield, 2)}% × (1 − {$d(taxRate, 2)}% tax) = {$d(R.treasPostTaxYield, 2)}% after tax.<br/>JOLCO IRR already includes tax shield — so UST must be on same after-tax basis.
+                  Pre-tax: {$d(treasuryYield, 2)}% × (1 − {$d(foreignInterestTaxPct, 3)}% JP foreign interest tax) = {$d(R.treasPostTaxYield, 2)}% after tax.<br/>US levies 0% withholding on Treasuries (Portfolio Interest Exemption, IRC §871). Japan withholds {$d(foreignInterestTaxPct, 3)}% on receipt.
                 </div>
                 {[
                   { l: "Capital", v: `$${$d(R.totalEquityDeployed / 1e6, 2)}M` },
