@@ -152,6 +152,9 @@ export default function JOLCOv3() {
   const [leaseTerm, setLeaseTerm] = useState(10);
   const [sofrRate, setSofrRate] = useState(4.3);
   const [spreadBps, setSpreadBps] = useState(280);
+  const [jpyBaseRate, setJpyBaseRate] = useState(0.10);   // TONA/TIBOR
+  const [bankSpreadBps, setBankSpreadBps] = useState(50); // bps over JPY base
+  const [swapCostBps, setSwapCostBps] = useState(45);    // USD/JPY cross-currency basis
   const [saleCommission, setSaleCommission] = useState(2.0);
   const [bbcCommission, setBbcCommission] = useState(1.25);
   // Purchase Option schedule
@@ -196,10 +199,10 @@ export default function JOLCOv3() {
     const equity = VP - debt;
     const annualPrincipal = VP / amortYrs; // fixed hire covers full vessel amortization
     const monthlyFixed = annualPrincipal / 12;
-    const allInRate = (sofrRate + spreadBps / 100) / 100;
-    // Assume bank charges the same rate (SOFR + spread) on the debt portion
-    // The variable hire is charged on the FULL outstanding balance
-    // So equity earns interest spread on its portion of the outstanding balance
+    // Bank loan: JPY base rate + bank spread + cross-currency swap cost (all converted to USD equivalent)
+    const bankAllInRate = (jpyBaseRate + bankSpreadBps / 100) / 100 + swapCostBps / 10000;
+    // Equity / charterer hire rate: USD SOFR + spread
+    const equityAllInRate = (sofrRate + spreadBps / 100) / 100;
 
     const poEntry = poSchedule.find(p => p.yr === effectiveExerciseYear);
     const poPriceMil = poEntry ? poEntry.price * 1e6 : 0;
@@ -245,19 +248,21 @@ export default function JOLCOv3() {
     for (let yr = 1; yr <= effectiveExerciseYear; yr++) {
       // ── CASH IN ──
       const fixedHire = annualPrincipal;
-      const variableHire = outstandingTotal * allInRate;
+      const variableHireBank   = outstandingDebt   * bankAllInRate;   // JPY loan interest (hedged to USD)
+      const variableHireEquity = outstandingEquity * equityAllInRate; // equity return component
+      const variableHire = variableHireBank + variableHireEquity;
       const totalHire = fixedHire + variableHire;
       const bbcCommCost = totalHire * bbcCommission / 100;
       const netHire = totalHire - bbcCommCost;
 
       // ── CASH OUT TO BANK ──
       const bankPrincipal = annualPrincipal * (debtPct / 100);
-      const bankInterest = outstandingDebt * allInRate;
+      const bankInterest = outstandingDebt * bankAllInRate;
       const totalToBank = bankPrincipal + bankInterest;
 
       // ── NET TO EQUITY ──
       const equityPrincipalReturn = annualPrincipal * ((100 - debtPct) / 100);
-      const equityInterestIncome = outstandingEquity * allInRate;
+      const equityInterestIncome = outstandingEquity * equityAllInRate;
       const totalToEquity = equityPrincipalReturn + equityInterestIncome;
       // Verify: totalToEquity should = totalHire - totalToBank
       
@@ -310,7 +315,7 @@ export default function JOLCOv3() {
       equityCF.push(netCF);
       equityCF_noTax.push(netCF_noTax);
       years.push({
-        yr, fixedHire, variableHire, totalHire, bbcCommCost, netHire,
+        yr, fixedHire, variableHireBank, variableHireEquity, variableHire, totalHire, bbcCommCost, netHire,
         bankPrincipal, bankInterest, totalToBank,
         equityPrincipalReturn, equityInterestIncome, hireSpread,
         dep: dep.total, spcTaxablePL, taxShieldThisYear,
@@ -329,8 +334,8 @@ export default function JOLCOv3() {
     const jolcoProfit = equityCF.reduce((a, b) => a + b, 0);
     const spread = blendedIRR != null ? blendedIRR - treasuryYield / 100 : null;
 
-    return { VP, debt, equity, saleCommCost, totalBbcComm, totalEquityDeployed, equityCF, equityCF_noTax, years, depr, blendedIRR, equityIRR, treasTerminal, treasProfit, jolcoProfit, spread, totalStream1, totalStream2, totalStream3, monthlyFixed, allInRate, poPriceMil };
-  }, [vesselPrice, debtPct, amortYrs, sofrRate, spreadBps, saleCommission, bbcCommission, taxRate, usefulLife, specialDeprPct, treasuryYield, flagId, effectiveExerciseYear, poSchedule]);
+    return { VP, debt, equity, saleCommCost, totalBbcComm, totalEquityDeployed, equityCF, equityCF_noTax, years, depr, blendedIRR, equityIRR, treasTerminal, treasProfit, jolcoProfit, spread, totalStream1, totalStream2, totalStream3, monthlyFixed, bankAllInRate, equityAllInRate, poPriceMil };
+  }, [vesselPrice, debtPct, amortYrs, sofrRate, spreadBps, jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission, taxRate, usefulLife, specialDeprPct, treasuryYield, flagId, effectiveExerciseYear, poSchedule]);
 
   const C = { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginBottom: 14 };
   const H = (color, text) => <div style={{ fontSize: 12, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 }}><span style={{ color }}>●</span>{text}</div>;
@@ -340,9 +345,9 @@ export default function JOLCOv3() {
     <div style={{ minHeight: "100vh", background: "#16161e", fontFamily: "'Inter', sans-serif", color: "#a9b1d6" }}>
       <div style={{ background: "linear-gradient(135deg, #1a1b26, #24283b)", borderBottom: "1px solid #292e42", padding: "20px 28px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 9, background: "linear-gradient(135deg, #7aa2f7, #bb9af7)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 800, color: "#1a1b26" }}>J</div>
+          <img src="jolco-logo.png" alt="JOLCO" style={{ height: 44, width: "auto", objectFit: "contain" }} />
           <div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: "#c0caf5", fontFamily: F }}>JOLCO Equity IRR Calculator <span style={{ fontSize: 11, color: "#9ece6a" }}>v3</span></div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#c0caf5", fontFamily: F }}>Equity IRR Calculator <span style={{ fontSize: 11, color: "#9ece6a" }}>v3</span></div>
             <div style={{ fontSize: 10, color: "#565f89" }}>Financed ~{debtPct}% by bank debt, ~{100-debtPct}% by Japanese TK (silent partnership) equity investors · MOF Depreciation · Tax Shield Analysis</div>
           </div>
         </div>
@@ -431,18 +436,29 @@ export default function JOLCOv3() {
               {H("#7aa2f7", "Charter & Interest")}
               <Inp label="Amortization Period" value={amortYrs} onChange={setAmortYrs} unit="yrs" help="Fixed hire = Vessel Price ÷ this" min={1} max={25} />
               <Inp label="Lease (BBC) Term" value={leaseTerm} onChange={setLeaseTerm} unit="yrs" help="Must be ≤ amortization period" min={1} max={25} />
-              <Inp label="SOFR Rate" value={sofrRate} onChange={setSofrRate} unit="%" step={0.1} />
-              <Inp label="Spread over SOFR" value={spreadBps} onChange={setSpreadBps} unit="bps" step={10} />
+              <div style={{ marginTop: 10, marginBottom: 4, fontSize: 9, fontWeight: 700, color: "#e0af68", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #292e42", paddingBottom: 4 }}>Bank Loan — JPY (SPC borrows from Japanese bank)</div>
+              <Inp label="JPY Base Rate (TONA/TIBOR)" value={jpyBaseRate} onChange={setJpyBaseRate} unit="%" step={0.05} help="Near-zero JPY policy rate · typically 0.05–0.50%" />
+              <Inp label="Bank Spread over JPY Base" value={bankSpreadBps} onChange={setBankSpreadBps} unit="bps" step={5} help="Credit spread charged by lending bank" />
+              <Inp label="USD/JPY Cross-Currency Swap Cost" value={swapCostBps} onChange={setSwapCostBps} unit="bps" step={5} help="Cost to swap JPY loan obligation into USD cash flows" />
+              <div style={{ padding: "6px 8px", borderRadius: 4, background: "#1e2030", marginBottom: 10, fontSize: 9, color: "#565f89" }}>
+                Effective USD cost of bank debt: <span style={{ color: "#e0af68", fontWeight: 700 }}>{((jpyBaseRate + bankSpreadBps/100)/1 + swapCostBps/100).toFixed(2)}%</span> · JPY {(jpyBaseRate + bankSpreadBps/100).toFixed(2)}% + {swapCostBps}bps swap
+              </div>
+              <div style={{ marginBottom: 4, fontSize: 9, fontWeight: 700, color: "#7aa2f7", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #292e42", paddingBottom: 4 }}>BBC Hire Rate — USD (SPC lends to charterer)</div>
+              <Inp label="SOFR Rate (USD)" value={sofrRate} onChange={setSofrRate} unit="%" step={0.1} help="USD reference rate for BBC hire calculation" />
+              <Inp label="Equity Spread over SOFR" value={spreadBps} onChange={setSpreadBps} unit="bps" step={10} help="Spread reflecting charterer credit + vessel risk" />
               {(() => {
                 const mFixed = R.monthlyFixed;
-                const mVariable = R.VP * R.allInRate / 12;
+                const mVariableBank   = R.debt   * R.bankAllInRate   / 12;
+                const mVariableEquity = R.equity * R.equityAllInRate / 12;
+                const mVariable = mVariableBank + mVariableEquity;
                 const mTotal = mFixed + mVariable;
                 return (
                   <div style={{ padding: 10, borderRadius: 6, background: "#1e2030", border: "1px solid #292e42" }}>
                     {[
                       { label: "Fixed Hire (Principal)", val: mFixed, color: "#9ece6a", sub: `VP ÷ ${amortYrs}yr ÷ 12 · rate-insensitive` },
-                      { label: "Variable Hire (Interest · Yr1)", val: mVariable, color: "#7aa2f7", sub: `${(R.allInRate * 100).toFixed(2)}% all-in on full balance · declines as balance amortises` },
-                      { label: "Total Monthly Hire (Yr 1)", val: mTotal, color: "#e0af68", sub: "Fixed + Variable · total cost to charterer" },
+                      { label: "Variable — Bank (JPY→USD · Yr1)", val: mVariableBank, color: "#e0af68", sub: `${(R.bankAllInRate * 100).toFixed(2)}% effective on ${$d(R.debt/1e6,1)}M bank bal. (${jpyBaseRate}% JPY + ${bankSpreadBps}bps + ${swapCostBps}bps swap)` },
+                      { label: "Variable — Equity (USD · Yr1)", val: mVariableEquity, color: "#7aa2f7", sub: `${(R.equityAllInRate * 100).toFixed(2)}% on ${$d(R.equity/1e6,1)}M equity bal. (SOFR ${sofrRate}% + ${spreadBps}bps)` },
+                      { label: "Total Monthly Hire (Yr 1)", val: mTotal, color: "#bb9af7", sub: "Fixed + Variable (Bank + Equity) · total cost to charterer" },
                     ].map((row, i, arr) => (
                       <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", paddingBottom: 8, marginBottom: i < arr.length - 1 ? 8 : 0, borderBottom: i < arr.length - 1 ? "1px solid #292e42" : "none" }}>
                         <div>
@@ -607,7 +623,7 @@ export default function JOLCOv3() {
                   { label: `Sale Commission (${saleCommission}% of VP)`, val: -sc, color: "#f7768e", sub: `Vessel purchase brokerage · $${$d(sc/1e6,2)}M paid at Year 0`, isNeg: true },
                   { label: "divider" },
                   { label: "Principal Returned via Hire", val: principalBack, color: "#7aa2f7", sub: `$${$d(eq/1e6,2)}M deployed → $${$d(principalBack/1e6,2)}M returned over ${effectiveExerciseYear} yrs` },
-                  { label: "① Interest on Equity Balance (gross)", val: s1, color: "#9ece6a", sub: `Charterer pays SOFR+${spreadBps}bps on full balance; bank only takes interest on debt portion` },
+                  { label: "① Interest on Equity Balance (gross)", val: s1, color: "#9ece6a", sub: `Equity earns ${(R.equityAllInRate*100).toFixed(2)}% (SOFR+${spreadBps}bps) on equity portion; bank debt serviced at ${(R.bankAllInRate*100).toFixed(2)}% (JPY+swap)` },
                   { label: `   − BBC Commission (${bbcCommission}% of hire)`, val: -bc, color: "#f7768e", sub: `Annual bareboat charter brokerage · $${$d(bc/1e6,2)}M total over lease`, isNeg: true },
                   { label: "② Tax Shield (Net)", val: s2, color: "#bb9af7", sub: "Depreciation losses flow via TK → offset investor's other taxable income" },
                   { label: "③ Residual from PO Exercise", val: s3, color: "#e0af68", sub: `PO at $${$d(R.poPriceMil/1e6,1)}M − remaining debt − cap gains tax` },
@@ -730,7 +746,7 @@ export default function JOLCOv3() {
                                 <span style={{ color: "#c0caf5", fontWeight: 700 }}>${$(y.totalHire)}</span>
                               </div>
                               <div style={{ paddingLeft: 12, fontSize: 10, color: "#565f89" }}>
-                                Fixed: ${$(y.fixedHire)}/yr + Variable: ${$(y.variableHire)} (SOFR+{spreadBps}bps on ${$(y.outstandingTotal + y.fixedHire)} bal.)
+                                Fixed: ${$(y.fixedHire)}/yr · Bank variable: ${$(y.variableHireBank)} ({((R.bankAllInRate)*100).toFixed(2)}% on ${$(y.outstandingDebt + y.bankPrincipal)} JPY bal.) · Equity variable: ${$(y.variableHireEquity)} ({((R.equityAllInRate)*100).toFixed(2)}% on ${$(y.outstandingEquity + y.equityPrincipalReturn)} bal.)
                               </div>
                               <div style={{ borderTop: "1px dashed #3b4261", marginTop: 4, paddingTop: 4 }} />
                               <div style={{ display: "flex", justifyContent: "space-between" }}>
