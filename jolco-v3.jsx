@@ -268,28 +268,30 @@ export default function JOLCOv3() {
 
     for (let yr = 1; yr <= effectiveExerciseYear; yr++) {
       // ── CASH IN ──
+      // Charter hire variable component is priced on the TOTAL outstanding balance at equityAllInRate.
+      // The bank's JPY funding cost (bankAllInRate × debt) is NOT embedded in the hire — it is a
+      // separate SPC expense. This creates genuine leverage sensitivity:
+      //   bankAllInRate < equityAllInRate → positive leverage → equity earns MORE than equityAllInRate
+      //   bankAllInRate > equityAllInRate → negative leverage → equity earns LESS than equityAllInRate
       const fixedHire = annualPrincipal;
-      const variableHireBank   = outstandingDebt   * bankAllInRate;   // JPY loan interest (hedged to USD)
-      const variableHireEquity = outstandingEquity * equityAllInRate; // equity return component
-      const variableHire = variableHireBank + variableHireEquity;
+      const variableHire = outstandingTotal * equityAllInRate;  // asset return on full capital base
+      const variableHireEquity = variableHire;                  // for display compat
+      const variableHireBank   = 0;                             // bank interest is a cost, not in hire
       const totalHire = fixedHire + variableHire;
       const bbcCommCost = totalHire * bbcCommission / 100;
       const netHire = totalHire - bbcCommCost;
 
       // ── CASH OUT TO BANK ──
       const bankPrincipal = annualPrincipal * (debtPct / 100);
-      const bankInterest = outstandingDebt * bankAllInRate;
+      const bankInterest = outstandingDebt * bankAllInRate;   // JPY funding cost — real SPC expense
       const totalToBank = bankPrincipal + bankInterest;
 
-      // ── NET TO EQUITY ──
+      // ── NET TO EQUITY (residual after bank principal + interest) ──
       const equityPrincipalReturn = annualPrincipal * ((100 - debtPct) / 100);
-      const equityInterestIncome = outstandingEquity * equityAllInRate;
-      const totalToEquity = equityPrincipalReturn + equityInterestIncome;
-      // Verify: totalToEquity should = totalHire - totalToBank
-      
-      // ── STREAM 1: INTEREST INCOME ON EQUITY BALANCE ──
-      // This is the actual RETURN on equity (not return of capital)
-      const hireSpread = equityInterestIncome;
+      const netHireToEquity = netHire - bankPrincipal - bankInterest;
+      // Stream 1 = interest-like income to equity (return ON capital, after bank costs)
+      const hireSpread = netHireToEquity - equityPrincipalReturn;
+      const equityInterestIncome = hireSpread;  // for display compat
 
       // ── STREAM 2: TAX SHIELD ──
       // SPC P&L for tax purposes: hire income − depreciation − interest expense
@@ -316,11 +318,10 @@ export default function JOLCOv3() {
       }
 
       // ── TOTAL EQUITY CF THIS YEAR ──
-      // Return OF capital (equity principal) + return ON capital (interest) + tax shield + residual
-      // For IRR purposes, the principal return IS a cashflow (it's cash coming back)
-      const netCF = equityPrincipalReturn + hireSpread - bbcCommCost + taxShieldThisYear + (isExitYear ? residualToEquity : 0);
+      // hireSpread already nets out BBC commission and bank costs, so no further deductions needed
+      const netCF = equityPrincipalReturn + hireSpread + taxShieldThisYear + (isExitYear ? residualToEquity : 0);
       // CF without tax shield (for pure equity IRR)
-      const netCF_noTax = equityPrincipalReturn + hireSpread - bbcCommCost + (isExitYear ? residualToEquity : 0);
+      const netCF_noTax = equityPrincipalReturn + hireSpread + (isExitYear ? residualToEquity : 0);
 
       // Update balances — clamp to zero so that if exercise year > amort period
       // the balances don't go negative and corrupt the model
@@ -374,7 +375,7 @@ export default function JOLCOv3() {
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <img src="updated bg image.png" alt="JOLCO" style={{ height: 48, width: "auto", objectFit: "contain" }} />
             <div>
-              <div style={{ fontSize: 19, fontWeight: 700, color: "#c0caf5", fontFamily: F }}>Equity IRR Calculator <span style={{ fontSize: 12, color: "#9ece6a" }}>v3</span></div>
+              <div style={{ fontSize: 19, fontWeight: 700, color: "#c0caf5", fontFamily: F }}>IRR Calculator <span style={{ fontSize: 12, color: "#9ece6a" }}>v3</span></div>
               <div style={{ fontSize: 11, color: "#a9b1d6" }}>Financed ~{debtPct}% by bank debt, ~{100-debtPct}% by Japanese TK (silent partnership) equity investors · MOF Depreciation · Tax Shield Analysis</div>
             </div>
           </div>
@@ -400,7 +401,7 @@ export default function JOLCOv3() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 }}>
                 <div style={{ padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" }}>
                   <div style={{ fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" }}>① Charter Hire (net BBC comm)</div>
-                  <div style={{ fontSize: 23, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>${$d((R.totalStream1 - R.totalBbcComm) / 1e6, 2)}M</div>
+                  <div style={{ fontSize: 23, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>${$d((R.totalStream1) / 1e6, 2)}M</div>
                   <div style={{ fontSize: 10, color: "#a9b1d6" }}>Hire spread after debt service &amp; {bbcCommission}% BBC brokerage</div>
                   <div style={{ marginTop: 5, fontSize: 9, fontWeight: 700, color: "#9ece6a44", background: "rgba(158,206,106,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" }}>CASH YIELD · pre-tax · from charter hire</div>
                 </div>
@@ -480,6 +481,11 @@ export default function JOLCOv3() {
                   <span style={{ fontSize: 11, color: "#a9b1d6" }}>DB: {(dbRate * 100).toFixed(1)}% · SL: {(1/usefulLife * 100).toFixed(2)}%</span>
                 </div>
                 <div style={{ fontSize: 10, color: "#a9b1d6", marginTop: 2 }}>MOF: {vType.cat}{isJPFlag ? "" : " (foreign: その他のもの 12yr flat)"}</div>
+                {isSecondHand && usefulLife === 2 && (
+                  <div style={{ marginTop: 5, fontSize: 10, color: "#e0af68", background: "rgba(224,175,104,0.08)", border: "1px solid rgba(224,175,104,0.3)", borderRadius: 4, padding: "4px 7px" }}>
+                    ⚠ Vessel age ≥ statutory life → NTA 省令第3条 floor: 2yr minimum (hard statutory rule). DB rate = 100% → full cost written off in Year 1. Correct per legislation — but JOLCOs rarely use vessels this old relative to their statutory life.
+                  </div>
+                )}
               </div>
               <Inp label="Vessel Price" value={vesselPrice} onChange={setVesselPrice} unit="$M" />
               <Inp label="Debt / Equity Split (Debt %)" value={debtPct} onChange={setDebtPct} unit="%" help={`${debtPct}% bank debt · ${100 - debtPct}% TK equity`} min={0} max={95} />
@@ -909,39 +915,34 @@ export default function JOLCOv3() {
                             <div style={{ fontSize: 11, fontWeight: 700, color: "#c0caf5", marginBottom: 8, fontFamily: F }}>Year {y.yr} — Full Hire Breakdown</div>
                             <div style={{ fontFamily: F, fontSize: 12, lineHeight: 2, color: "#a9b1d6" }}>
                               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                <span>Total BB Hire Received</span>
+                                <span>Gross BB Charter Hire</span>
                                 <span style={{ color: "#c0caf5", fontWeight: 700 }}>${$(y.totalHire)}</span>
                               </div>
                               <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
-                                Sched. Amort.: ${$(y.fixedHire)}/yr (rate-insensitive) · Financing Return — Bank: ${$(y.variableHireBank)} ({((R.bankAllInRate)*100).toFixed(2)}% on ${$(y.outstandingDebt + y.bankPrincipal)} JPY bal.) · Financing Return — Equity: ${$(y.variableHireEquity)} ({((R.equityAllInRate)*100).toFixed(2)}% on ${$(y.outstandingEquity + y.equityPrincipalReturn)} bal.)
+                                Fixed (amortization): ${$(y.fixedHire)}/yr · Variable ({((R.equityAllInRate)*100).toFixed(2)}% × ${$(y.outstandingEquity + y.equityPrincipalReturn + y.outstandingDebt + y.bankPrincipal)} total outstanding): ${$(y.variableHireEquity)}
                               </div>
-                              <div style={{ borderTop: "1px dashed #3b4261", marginTop: 4, paddingTop: 4 }} />
                               <div style={{ display: "flex", justifyContent: "space-between" }}>
                                 <span style={{ color: "#f7768e" }}>BBC Commission ({bbcCommission}%)</span>
                                 <span style={{ color: "#f7768e" }}>-${$(y.bbcCommCost)}</span>
                               </div>
                               <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
-                                Annual brokerage on gross hire · Net hire: ${$(y.netHire)}
-                              </div>
-                              <div style={{ display: "flex", justifyContent: "space-between", paddingLeft: 12, fontSize: 11 }}>
-                                <span style={{ color: "#bb9af7" }}>BBC comm tax offset ({taxRate.toFixed(2)}% of commission)</span>
-                                <span style={{ color: "#bb9af7" }}>+${$(y.bbcCommCost * taxRate / 100)}</span>
-                              </div>
-                              <div style={{ paddingLeft: 24, fontSize: 10, color: "#a9b1d6" }}>
-                                BBC commission is a deductible SPC expense → saves {taxRate.toFixed(2)}% tax on that amount via the TK P&amp;L
+                                Brokerage on gross hire · Net hire: ${$(y.netHire)} · tax offset: +${$(y.bbcCommCost * taxRate / 100)} (deductible SPC expense)
                               </div>
                               <div style={{ borderTop: "1px dashed #3b4261", marginTop: 4, paddingTop: 4 }} />
                               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                <span style={{ color: "#f7768e" }}>To Bank ({debtPct}%)</span>
+                                <span style={{ color: "#f7768e" }}>Bank Debt Service ({debtPct}% — JPY funding cost)</span>
                                 <span style={{ color: "#f7768e" }}>-${$(y.totalToBank)}</span>
                               </div>
                               <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
-                                Principal: ${$(y.bankPrincipal)} + Interest: ${$(y.bankInterest)}
+                                Principal: ${$(y.bankPrincipal)} · Interest: ${$(y.bankInterest)} ({((R.bankAllInRate)*100).toFixed(2)}% on ${$(y.outstandingDebt + y.bankPrincipal)} JPY debt)
+                              </div>
+                              <div style={{ paddingLeft: 12, fontSize: 10, color: "#7aa2f7" }}>
+                                ↑ This is the JPY rate sensitivity — higher bank rate reduces what flows to equity
                               </div>
                               <div style={{ borderTop: "1px dashed #3b4261", marginTop: 4, paddingTop: 4 }} />
                               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                <span style={{ color: "#9ece6a", fontWeight: 700 }}>To Equity ({100 - debtPct}%)</span>
-                                <span style={{ color: "#9ece6a", fontWeight: 700 }}>${$(y.equityPrincipalReturn + y.equityInterestIncome - y.bbcCommCost)}</span>
+                                <span style={{ color: "#9ece6a", fontWeight: 700 }}>Net to Equity ({100 - debtPct}%)</span>
+                                <span style={{ color: "#9ece6a", fontWeight: 700 }}>${$(y.equityPrincipalReturn + y.hireSpread)}</span>
                               </div>
                               <div style={{ paddingLeft: 12, marginTop: 2 }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
@@ -949,12 +950,8 @@ export default function JOLCOv3() {
                                   <span style={{ color: "#7aa2f7" }}>${$(y.equityPrincipalReturn)}</span>
                                 </div>
                                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
-                                  <span style={{ color: "#9ece6a" }}>Interest income (return ON capital)</span>
-                                  <span style={{ color: "#9ece6a" }}>${$(y.equityInterestIncome)}</span>
-                                </div>
-                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
-                                  <span style={{ color: "#f7768e" }}>Less BBC commission</span>
-                                  <span style={{ color: "#f7768e" }}>-${$(y.bbcCommCost)}</span>
+                                  <span style={{ color: y.hireSpread >= 0 ? "#9ece6a" : "#f7768e" }}>Hire spread (return ON capital, Stream 1)</span>
+                                  <span style={{ color: y.hireSpread >= 0 ? "#9ece6a" : "#f7768e" }}>{y.hireSpread >= 0 ? `$${$(y.hireSpread)}` : `-$${$(Math.abs(y.hireSpread))}`}</span>
                                 </div>
                               </div>
                             </div>
@@ -968,7 +965,7 @@ export default function JOLCOv3() {
                   {/* Totals row */}
                   <tr style={{ borderTop: "2px solid #3b4261", background: "#1e2030" }}>
                     <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#c0caf5", fontWeight: 700 }}>Σ</td>
-                    <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#9ece6a", fontWeight: 700 }}>${$(R.totalStream1 - R.totalBbcComm)}</td>
+                    <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#9ece6a", fontWeight: 700 }}>${$(R.totalStream1)}</td>
                     <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#bb9af7", fontWeight: 700 }}>${$(R.totalStream2)}</td>
                     <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#e0af68", fontWeight: 700 }}>${$(R.totalStream3)}</td>
                     <td style={{ padding: "7px 8px", textAlign: "right", fontFamily: F, color: "#c0caf5", fontWeight: 700 }}>${$(R.jolcoProfit)}</td>
@@ -1010,7 +1007,7 @@ export default function JOLCOv3() {
                 <div style={{ fontSize: 11, color: "#a9b1d6", marginBottom: 12 }}>Equity IRR (all 3 streams combined)</div>
                 {[
                   { l: `Equity Deployed (${100-debtPct}%+comm)`, v: `$${$d(R.totalEquityDeployed / 1e6, 2)}M`, c: "#7aa2f7" },
-                  { l: "① Hire Spread (net BBC comm)", v: `$${$d((R.totalStream1 - R.totalBbcComm) / 1e6, 2)}M`, c: "#9ece6a" },
+                  { l: "① Hire Spread (net BBC comm)", v: `$${$d((R.totalStream1) / 1e6, 2)}M`, c: "#9ece6a" },
                   { l: "② Tax Shield (Net)", v: `$${$d(R.totalStream2 / 1e6, 2)}M`, c: "#bb9af7" },
                   { l: "③ Residual / PO", v: `$${$d(R.totalStream3 / 1e6, 2)}M`, c: "#e0af68" },
                   { l: "Total Profit", v: `$${$d(R.jolcoProfit / 1e6, 2)}M`, c: R.jolcoProfit >= 0 ? "#9ece6a" : "#f7768e" },
