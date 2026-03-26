@@ -197,6 +197,10 @@ export default function JOLCOv3() {
   const effectiveExerciseYear = Math.max(effectivePOFirstYear, Math.min(poLastYear, exerciseYear));
   // Tax
   const [taxRate, setTaxRate] = useState(30.62);
+  // Capital-gains tax rate on PO exercise: in Japan, corporate cap gains are taxed as ordinary
+  // income (no preferential rate), so this defaults to the same rate as taxRate.
+  // Keep it independent so it can be adjusted for non-JP investors or treaty scenarios.
+  const [capGainsTaxRate, setCapGainsTaxRate] = useState(30.62);
   const [foreignInterestTaxPct, setForeignInterestTaxPct] = useState(27); // JP SME corporate rate on foreign interest — US levies 0% (Portfolio Interest Exemption IRC §871h); Japan taxes at full corp rate (~27% SME, 30.62% large corp)
   const [specialDeprPct, setSpecialDeprPct] = useState(0);
   const [treasuryYield, setTreasuryYield] = useState(4.25);
@@ -304,7 +308,7 @@ export default function JOLCOv3() {
         // Cap gains tax on (PO price - book value)
         const bookVal = dep.bv;
         const capGain = Math.max(0, poPriceMil - bookVal);
-        capGainTax = capGain * taxRate / 100;
+        capGainTax = capGain * capGainsTaxRate / 100;
         residualToEquity = grossResidual - capGainTax;
       }
 
@@ -354,7 +358,7 @@ export default function JOLCOv3() {
     const spread = blendedIRR != null ? blendedIRR - treasPostTaxYield / 100 : null;
 
     return { VP, debt, equity, saleCommCost, totalBbcComm, totalEquityDeployed, equityCF, equityCF_noTax, years, depr, blendedIRR, equityIRR, treasTerminal, treasProfit, jolcoProfit, spread, totalStream1, totalStream2, totalStream3, monthlyFixed, bankAllInRate, equityAllInRate, poPriceMil, treasPostTaxYield };
-  }, [vesselPrice, debtPct, amortYrs, sofrRate, spreadBps, jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission, taxRate, foreignInterestTaxPct, usefulLife, specialDeprPct, treasuryYield, flagId, effectiveExerciseYear, poSchedule, lockInPeriod, poPremium]);
+  }, [vesselPrice, debtPct, amortYrs, sofrRate, spreadBps, jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission, taxRate, capGainsTaxRate, foreignInterestTaxPct, usefulLife, specialDeprPct, treasuryYield, flagId, effectiveExerciseYear, poSchedule, lockInPeriod, poPremium]);
 
   const C = { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginBottom: 14 };
   const H = (color, text) => <div style={{ fontSize: 13, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 }}><span style={{ color }}>●</span>{text}</div>;
@@ -557,17 +561,29 @@ export default function JOLCOv3() {
                 )}
               </div>
               {/* PO Premium */}
-              <div style={{ marginBottom: 10 }}>
-                <Inp label="PO Premium" value={poPremium} onChange={setPoPremium} unit="$M" step={0.1}
-                  help={`Flat margin added to the amortisation formula at every year. Formula: PO(N) = max(0, VP − VP/amortYrs × N) + premium. Higher premium raises gross Stream 3 but also enlarges the capital-gain base → cap-gains tax = (PO − book value) × ${$d(taxRate, 2)}%.`} />
-                {poPremium !== 0 && (
-                  <button onClick={() => setPoPremium(0)} style={{ fontSize: 9, color: "#f7768e", background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>reset to 0</button>
-                )}
+              <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 6, border: `1px solid ${poPremium !== 0 ? "#9ece6a55" : "#3b4261"}`, background: poPremium !== 0 ? "rgba(158,206,106,0.04)" : "transparent" }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#9ece6a", letterSpacing: "0.05em", marginBottom: 4, fontFamily: F, textTransform: "uppercase" }}>PO Premium ($M)</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <input type="number" value={poPremium} step={0.1}
+                    onChange={(e) => setPoPremium(parseFloat(e.target.value) || 0)}
+                    style={{ flex: 1, padding: "7px 9px", borderRadius: 5, border: `1px solid ${poPremium !== 0 ? "#9ece6a" : "#3b4261"}`, background: "#1a1b26", color: poPremium !== 0 ? "#9ece6a" : "#c0caf5", fontSize: 14, fontFamily: F, outline: "none" }}
+                    onFocus={(e) => e.target.style.borderColor = "#9ece6a"} onBlur={(e) => e.target.style.borderColor = poPremium !== 0 ? "#9ece6a" : "#3b4261"} />
+                  <span style={{ fontSize: 11, color: "#a9b1d6", minWidth: 24 }}>$M</span>
+                  {poPremium !== 0 && (
+                    <button onClick={() => setPoPremium(0)} style={{ fontSize: 9, color: "#f7768e", background: "none", border: "none", cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}>reset to 0</button>
+                  )}
+                </div>
+                <div style={{ fontSize: 10, color: "#a9b1d6", marginTop: 4, lineHeight: 1.5 }}>
+                  Negotiated margin above the residual financing balance. Added flat at every exercise year.
+                  Raises gross Stream 3 but enlarges the cap-gain base →
+                  extra tax = premium × {$d(capGainsTaxRate, 2)}% (cap-gains rate) on any amount above book value.
+                  Net benefit ≈ premium × (1 − {$d(capGainsTaxRate, 2)}%).
+                </div>
               </div>
               {/* Formula info */}
               <div style={{ padding: 8, borderRadius: 5, background: "#1e2030", marginBottom: 10, fontSize: 10, color: "#a9b1d6", lineHeight: 1.6 }}>
-                <strong style={{ color: "#bb9af7" }}>Base decline:</strong> ${$d(effectiveDecline, 3)}M/yr (= VP ÷ amortYrs){" · "}
-                <strong style={{ color: "#bb9af7" }}>PO(N)</strong> = max(0, {$d(vesselPrice, 1)} − {$d(effectiveDecline, 3)}×N){poPremium !== 0 ? <span style={{ color: "#9ece6a" }}> + {$d(poPremium, 2)}</span> : null}.
+                <strong style={{ color: "#bb9af7" }}>PO(N)</strong> = max(0, {$d(vesselPrice, 1)} − {$d(effectiveDecline, 3)}×N){poPremium !== 0 ? <span style={{ color: "#9ece6a" }}> + {$d(poPremium, 2)}</span> : null}{" · "}
+                Cap-gain tax = max(0, PO − book value) × <span style={{ color: "#f7768e" }}>{$d(capGainsTaxRate, 2)}%</span>.
                 {" "}Override any row below for non-linear schedules.
               </div>
               {/* Locked years — visual indicator */}
@@ -609,7 +625,8 @@ export default function JOLCOv3() {
                 </div>
               ))}
               <div style={{ marginTop: 10, borderTop: "1px solid #292e42", paddingTop: 10 }}>
-                <Inp label="Effective Tax Rate" value={taxRate} onChange={setTaxRate} unit="%" help={`${taxRate}% · std JP corp (23.2%) + local + defense surtax`} step={0.01} />
+                <Inp label="Ordinary Income Tax Rate" value={taxRate} onChange={setTaxRate} unit="%" help={`${taxRate}% · std JP corp (23.2%) + local + defense surtax. Applied to Stream 2 (tax shield on hire income / depreciation losses).`} step={0.01} />
+                <Inp label="Cap-Gains Tax Rate (PO)" value={capGainsTaxRate} onChange={setCapGainsTaxRate} unit="%" help={`Applied to Stream 3: max(0, PO price − tax book value). In Japan, corporate cap gains are taxed as ordinary income (no preferential rate) → default equals ordinary rate. Adjust for non-JP investors or tax-treaty scenarios.`} step={0.01} />
                 <Inp label="US Treasury Yield" value={treasuryYield} onChange={setTreasuryYield} unit="%" step={0.01} />
                 <Inp label="JP Tax on Foreign Interest" value={foreignInterestTaxPct} onChange={setForeignInterestTaxPct} unit="%" step={0.01} help="JP SME corp rate ~27%, large corp 30.62%. No preferential rate for corps on foreign interest. US charges 0% (Portfolio Interest Exemption, IRC §871h)." />
                 <Slider label="Special Depreciation (Yr1)" value={specialDeprPct} onChange={(v) => setSpecialDeprPct(Math.min(v, flagInfo.specialMax))} min={0} max={flagInfo.specialMax} step={1} unit="%" help={`MLIT advanced vessels: ${flagInfo.specialMin}–${flagInfo.specialMax}% for ${flagInfo.label}`} />
