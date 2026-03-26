@@ -71,10 +71,48 @@ Two separate brokerage commissions are modelled:
 | Defense surtax | ~3.2% |
 | **Effective rate default** | **30.62%** (fully adjustable) |
 | Depreciation method | 200% Declining Balance switching to Straight Line when SL is greater than or equal to DB (post FY2012 MOF ordinance) |
-| Special depreciation | 18 to 32% of cost in Year 1 for MLIT certified advanced vessels |
+| Special depreciation | 18 to 32% of cost in Year 1 for MLIT certified advanced **newbuildings** only |
 | Foreign flag vessels | 12 year flat useful life (MOF 耐用年数省令 Beppyō 1, その他のもの) |
 | Japanese flag vessels | Type specific: 11 to 15 years per MOF schedule |
 | LPG carriers | Use oil tanker useful life per NTA Circular 2-4-2 |
+
+---
+
+## Second-Hand Vessel Provisions
+
+When the vessel age at delivery is greater than zero, the model automatically applies the Japanese NTA rules for used assets under **MOF Ordinance Article 3 (耐用年数省令 第3条)**.
+
+### Remaining Useful Life Formula (中古資産の耐用年数)
+
+| Condition | Remaining Life |
+|-----------|---------------|
+| Age ≥ statutory new life | `max(2, floor(newLife × 0.2))` |
+| Age < statutory new life | `max(2, floor((newLife − age) + age × 0.2))` |
+
+The second formula simplifies to `max(2, floor(newLife − age × 0.8))`. A minimum of 2 years is always applied regardless of how old the vessel is.
+
+**Example — 8-year-old Bulk Carrier ≥2,000 GT (foreign flag, newLife = 12 yr):**
+- `max(2, floor((12 − 8) + 8 × 0.2)) = max(2, floor(4 + 1.6)) = max(2, 5) = 5 yr`
+
+### Key Differences for Second-Hand vs Newbuilding
+
+| Item | Newbuilding | Second-Hand |
+|------|------------|-------------|
+| Useful life | Full statutory (9–15 yr) | Remaining NTA life (min 2 yr) |
+| Depreciation schedule | Runs for full new life | Runs only for remaining life |
+| Year 1 DB rate | 2 / newLife | 2 / remainingLife (higher — faster write-off) |
+| Special depreciation (MLIT) | Eligible (18–32%) | Generally **not eligible** — applies to certified new advanced vessels only. Verify with tax counsel |
+| Debt LTV | Banks typically 70% | Banks typically 60–65% for older vessels — adjust `debtPct` accordingly |
+| Construction period | Usually 1–2 yr pre-delivery | Immediate delivery — no construction lag |
+
+### What the calculator does automatically
+
+1. Reads vessel type and flag to determine statutory new life per MOF Beppyō 1.
+2. Applies the NTA Art. 3 formula to derive remaining useful life from the entered vessel age.
+3. Runs the full 200% DB → SL depreciation schedule on the **remaining life**, starting from the full **purchase price** (not original cost — the TK SPC acquires at current market price).
+4. Displays the remaining vs new life in both Tab 1 (Vessel & Structure) and Tab 2 (Depreciation Scale).
+5. Warns if special depreciation is set above zero for a second-hand vessel.
+6. The MOF Rate Index in Tab 2 shows the NTA-computed remaining life for every vessel type at the entered age.
 
 ---
 
@@ -105,6 +143,7 @@ Use `npm run watch` during development. esbuild will automatically rebuild on ev
 |----------|---------|
 | `solveIRR(cf, guess)` | Newton Raphson IRR solver with bisection fallback and robust sign flip detection |
 | `computeDepr(cost, life, specialPct)` | Full MOF 200% DB to SL schedule with Year 1 special depreciation |
+| `computeUsedAssetLife(newLife, usedYears)` | NTA MOF Art. 3 remaining useful life for second-hand vessels: max(2, floor((newLife − usedYears) + usedYears × 0.2)) |
 | `JOLCOv3()` | Main React component with all state, memos, and UI in one place |
 | `useMemo R{}` | Core financial model. Produces all cashflows, IRR, stream totals, commissions |
 
@@ -113,6 +152,7 @@ Use `npm run watch` during development. esbuild will automatically rebuild on ev
 | State | Default | Description |
 |-------|---------|-------------|
 | `vesselPrice` | $29.4M | Vessel purchase price |
+| `vesselAgeYrs` | 0 yr | Age of vessel at delivery. 0 = newbuilding. Any positive value triggers NTA Art. 3 remaining life formula for second-hand vessels |
 | `debtPct` | 70% | Bank debt as % of VP (shown dynamically throughout) |
 | `amortYrs` | 15 yr | Amortization period. Fixed hire = VP divided by amortYrs. Can differ from leaseTerm. Longer amort means lower hire and larger PO residual debt at exit |
 | `leaseTerm` | 10 yr | BBC lease duration, how long the charterer pays hire. Syncs poLastYear (last PO / obligation). Typically shorter than amortYrs |
@@ -211,6 +251,7 @@ git push origin main
 | MOF Ordinance 耐用年数省令 Beppyō 1 (別表第一) | Vessel statutory useful lives by type and flag |
 | Special Measures Taxation Act | Special depreciation (MLIT advanced vessels) |
 | NTA Circular 2-4-2 | LPG carriers classified as oil tankers for depreciation |
+| MOF Ordinance Art. 3 (耐用年数省令 第3条) | Remaining useful life formula for used (second-hand) assets |
 | Commercial Code Art. 535 to 542 | Tokumei Kumiai (TK) silent partnership structure |
 | Ship Act Arts. 4 to 19 | Japanese flag registration requirement (determines useful life category) |
 

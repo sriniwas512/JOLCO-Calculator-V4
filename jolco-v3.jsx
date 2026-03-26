@@ -81,6 +81,17 @@ const FLAG_OPTIONS = [
   { id: "foreign", label: "Foreign Flag (PAN/LBR/MHL etc.)", desc: "Not under Ship Act (船舶法適用外)", specialMin: 18, specialMax: 30 },
 ];
 
+// MOF Ordinance Art. 3 (耐用年数省令 第3条) — Remaining life for USED assets (中古資産)
+// Two cases:
+//   a) usedYears >= newLife → already exceeded statutory life → use max(2, floor(newLife × 0.2))
+//   b) usedYears <  newLife → max(2, floor((newLife − usedYears) + usedYears × 0.2))
+// Formula simplification for (b): max(2, floor(newLife − usedYears × 0.8))
+function computeUsedAssetLife(newLife, usedYears) {
+  if (usedYears <= 0) return newLife;
+  if (usedYears >= newLife) return Math.max(2, Math.floor(newLife * 0.2));
+  return Math.max(2, Math.floor((newLife - usedYears) + usedYears * 0.2));
+}
+
 function computeDepr(cost, life, specialPct = 0) {
   const rate = 2 / life;
   const sched = [];
@@ -147,6 +158,7 @@ export default function JOLCOv3() {
   const [vesselTypeId, setVesselTypeId] = useState("bulk_l");
   const [flagId, setFlagId] = useState("foreign");
   const [vesselPrice, setVesselPrice] = useState(29.4);
+  const [vesselAgeYrs, setVesselAgeYrs] = useState(0); // 0 = newbuilding; >0 = second-hand (age at delivery)
   const [debtPct, setDebtPct] = useState(70);
   const [amortYrs, setAmortYrs] = useState(15);
   const [leaseTerm, setLeaseTerm] = useState(10);
@@ -195,7 +207,10 @@ export default function JOLCOv3() {
   const vType = VESSEL_DB.find(v => v.id === vesselTypeId);
   const flagInfo = FLAG_OPTIONS.find(f => f.id === flagId);
   const isJPFlag = flagId === "jp";
-  const usefulLife = isJPFlag ? vType.jpLife : vType.forLife;
+  const isSecondHand = vesselAgeYrs > 0;
+  const newbuildingLife = isJPFlag ? vType.jpLife : vType.forLife;
+  // For second-hand: apply NTA MOF Art.3 remaining life formula (中古資産の耐用年数)
+  const usefulLife = isSecondHand ? computeUsedAssetLife(newbuildingLife, vesselAgeYrs) : newbuildingLife;
   const dbRate = 2 / usefulLife;
 
   const R = useMemo(() => {
@@ -345,7 +360,7 @@ export default function JOLCOv3() {
     const spread = blendedIRR != null ? blendedIRR - treasPostTaxYield / 100 : null;
 
     return { VP, debt, equity, saleCommCost, totalBbcComm, totalEquityDeployed, equityCF, equityCF_noTax, years, depr, blendedIRR, equityIRR, treasTerminal, treasProfit, jolcoProfit, spread, totalStream1, totalStream2, totalStream3, monthlyFixed, bankAllInRate, equityAllInRate, poPriceMil, treasPostTaxYield };
-  }, [vesselPrice, debtPct, amortYrs, sofrRate, spreadBps, jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission, taxRate, capGainsTaxRate, foreignInterestTaxPct, usefulLife, specialDeprPct, treasuryYield, flagId, effectiveExerciseYear, poSchedule]);
+  }, [vesselPrice, debtPct, amortYrs, sofrRate, spreadBps, jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission, taxRate, capGainsTaxRate, foreignInterestTaxPct, usefulLife, specialDeprPct, treasuryYield, flagId, effectiveExerciseYear, poSchedule, vesselAgeYrs]);
 
   const C = { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginBottom: 14 };
   const H = (color, text) => <div style={{ fontSize: 13, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 }}><span style={{ color }}>●</span>{text}</div>;
@@ -432,10 +447,35 @@ export default function JOLCOv3() {
                 </select>
                 <div style={{ fontSize: 10, color: "#a9b1d6", marginTop: 2 }}>{flagInfo.desc} · Special depr: {flagInfo.specialMin}–{flagInfo.specialMax}%</div>
               </div>
+              {/* Vessel Age / Condition */}
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" }}>Vessel Age at Delivery</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <input type="number" value={vesselAgeYrs} min={0} max={newbuildingLife - 1} step={1}
+                    onChange={(e) => setVesselAgeYrs(Math.max(0, parseFloat(e.target.value) || 0))}
+                    style={{ width: "100%", padding: "7px 9px", borderRadius: 5, border: `1px solid ${isSecondHand ? "#e0af68" : "#3b4261"}`, background: "#1a1b26", color: "#c0caf5", fontSize: 14, fontFamily: F, outline: "none" }}
+                    onFocus={(e) => e.target.style.borderColor = "#7aa2f7"} onBlur={(e) => e.target.style.borderColor = isSecondHand ? "#e0af68" : "#3b4261"} />
+                  <span style={{ fontSize: 11, color: "#a9b1d6", minWidth: 32 }}>yrs</span>
+                </div>
+                <div style={{ fontSize: 10, color: "#a9b1d6", marginTop: 2 }}>0 = newbuilding · enter age for second-hand vessel</div>
+              </div>
+              {/* Ship condition badge */}
+              {isSecondHand ? (
+                <div style={{ padding: "6px 10px", borderRadius: 5, background: "rgba(224,175,104,0.10)", border: "1px solid #e0af6866", marginBottom: 10, fontSize: 10, color: "#e0af68", lineHeight: 1.55 }}>
+                  <strong>Second-Hand</strong> — {vesselAgeYrs} yr{vesselAgeYrs !== 1 ? "s" : ""} old at delivery. NTA remaining life formula (MOF Ord. Art. 3): max(2, ⌊({newbuildingLife} − {vesselAgeYrs}) + {vesselAgeYrs}×0.2⌋) = <strong>{usefulLife} yrs</strong> (vs {newbuildingLife} yrs new). Depreciation is computed on the remaining statutory life only.
+                </div>
+              ) : (
+                <div style={{ padding: "4px 8px", borderRadius: 4, background: "rgba(158,206,106,0.06)", border: "1px solid #9ece6a33", marginBottom: 10, fontSize: 10, color: "#9ece6a" }}>
+                  Newbuilding — full statutory useful life applies.
+                </div>
+              )}
               <div style={{ padding: 10, borderRadius: 6, background: "#1e2030", border: "1px solid #292e42", marginBottom: 10 }}>
-                <div style={{ fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", marginBottom: 3 }}>Statutory Useful Life</div>
+                <div style={{ fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", marginBottom: 3 }}>
+                  {isSecondHand ? "Remaining Useful Life (NTA Art. 3)" : "Statutory Useful Life"}
+                </div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                  <span style={{ fontSize: 25, fontWeight: 700, color: "#9ece6a", fontFamily: F }}>{usefulLife}<span style={{ fontSize: 12, color: "#a9b1d6" }}>yr</span></span>
+                  <span style={{ fontSize: 25, fontWeight: 700, color: isSecondHand ? "#e0af68" : "#9ece6a", fontFamily: F }}>{usefulLife}<span style={{ fontSize: 12, color: "#a9b1d6" }}>yr</span></span>
+                  {isSecondHand && <span style={{ fontSize: 12, color: "#a9b1d6" }}>/ {newbuildingLife}yr new</span>}
                   <span style={{ fontSize: 11, color: "#a9b1d6" }}>DB: {(dbRate * 100).toFixed(1)}% · SL: {(1/usefulLife * 100).toFixed(2)}%</span>
                 </div>
                 <div style={{ fontSize: 10, color: "#a9b1d6", marginTop: 2 }}>MOF: {vType.cat}{isJPFlag ? "" : " (foreign: その他のもの 12yr flat)"}</div>
@@ -578,6 +618,11 @@ export default function JOLCOv3() {
                 <Inp label="US Treasury Yield" value={treasuryYield} onChange={setTreasuryYield} unit="%" step={0.01} />
                 <Inp label="JP Tax on Foreign Interest" value={foreignInterestTaxPct} onChange={setForeignInterestTaxPct} unit="%" step={0.01} help="JP SME corp rate ~27%, large corp 30.62%. No preferential rate for corps on foreign interest. US charges 0% (Portfolio Interest Exemption, IRC §871h)." />
                 <Slider label="Special Depreciation (Yr1)" value={specialDeprPct} onChange={(v) => setSpecialDeprPct(Math.min(v, flagInfo.specialMax))} min={0} max={flagInfo.specialMax} step={1} unit="%" help={`MLIT advanced vessels: ${flagInfo.specialMin}–${flagInfo.specialMax}% for ${flagInfo.label}`} />
+                {isSecondHand && specialDeprPct > 0 && (
+                  <div style={{ padding: "5px 8px", borderRadius: 4, background: "rgba(247,118,142,0.08)", border: "1px solid #f7768e44", fontSize: 10, color: "#f7768e", marginTop: -6, marginBottom: 8 }}>
+                    ⚠ Special depreciation (MLIT certified advanced vessel 優良船舶) normally applies only to <strong>newbuildings</strong>. Second-hand vessels do not qualify unless specially certified. Verify with tax counsel before applying.
+                  </div>
+                )}
               </div>
             </div>
 
@@ -588,11 +633,22 @@ export default function JOLCOv3() {
         {tab === "depr" && (
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
             <div style={C}>
-              {H("#bb9af7", `Depreciation Scale — ${vType.label}`)}
+              {H("#bb9af7", `Depreciation Scale — ${vType.label}${isSecondHand ? ` (Second-Hand, ${vesselAgeYrs}yr old)` : " (Newbuilding)"}`)}
+              {isSecondHand && (
+                <div style={{ padding: "6px 10px", borderRadius: 5, background: "rgba(224,175,104,0.08)", border: "1px solid #e0af6855", marginBottom: 10, fontSize: 10, color: "#e0af68", lineHeight: 1.6 }}>
+                  <strong>Second-Hand vessel:</strong> NTA MOF Art. 3 remaining useful life = <strong>{usefulLife} yr</strong> (full new life = {newbuildingLife} yr, age = {vesselAgeYrs} yr). Depreciation schedule below covers only the {usefulLife}-yr remaining life, starting from the full vessel purchase price.
+                </div>
+              )}
               <div style={{ padding: "8px 10px", borderRadius: 5, background: "#1e2030", marginBottom: 12, fontSize: 10, color: "#a9b1d6", lineHeight: 1.6 }}>
                 <span style={{ color: "#e0af68", fontWeight: 700 }}>DB (定率法)</span> applies <span style={{ color: "#e0af68" }}>2 ÷ useful life</span> as a rate to the <em>remaining</em> book value each year — front loads depreciation. Switches to <span style={{ color: "#9ece6a", fontWeight: 700 }}>SL (定額法)</span> the moment straight line on remaining balance beats DB, per MOF post FY2012 rules. The MOF only sets the useful life; this schedule is the computed output.
+                {isSecondHand && <span style={{ color: "#e0af68" }}> For second-hand: useful life = max(2, ⌊(newLife − age) + age×0.2⌋) per MOF Ord. Art. 3 (耐用年数省令 第3条).</span>}
               </div>
               <Slider label="Special Depreciation Rate" value={specialDeprPct} onChange={(v) => setSpecialDeprPct(Math.min(v, flagInfo.specialMax))} min={0} max={flagInfo.specialMax} step={1} unit="%" help={`${flagInfo.specialMin}–${flagInfo.specialMax}% for ${flagInfo.label} · slide to see how Yr1 bonus changes the IRR`} />
+              {isSecondHand && specialDeprPct > 0 && (
+                <div style={{ padding: "5px 8px", borderRadius: 4, background: "rgba(247,118,142,0.08)", border: "1px solid #f7768e44", fontSize: 10, color: "#f7768e", marginTop: -8, marginBottom: 10 }}>
+                  ⚠ Special depreciation (優良船舶) is for MLIT-certified newbuildings only. Verify applicability for second-hand vessels with tax counsel.
+                </div>
+              )}
               <div style={{ display: "flex", gap: 12, marginBottom: 12, fontSize: 11 }}>
                 <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 12, height: 8, borderRadius: 2, background: "#7aa2f7", display: "inline-block" }} /> Ordinary</span>
                 {specialDeprPct > 0 && <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 12, height: 8, borderRadius: 2, background: "#bb9af7", display: "inline-block" }} /> Special</span>}
@@ -641,17 +697,21 @@ export default function JOLCOv3() {
                 <div style={{ flex: 1 }}>VESSEL TYPE</div>
                 <div style={{ width: 32, textAlign: "right" }}>JP</div>
                 <div style={{ width: 32, textAlign: "right" }}>FOR</div>
+                {isSecondHand && <div style={{ width: 38, textAlign: "right", color: "#e0af68" }}>NTA</div>}
                 <div style={{ width: 42, textAlign: "right" }}>DB%</div>
               </div>
               {VESSEL_DB.map((v, i) => {
                 const isActive = v.id === vesselTypeId;
                 const life = isJPFlag ? v.jpLife : v.forLife;
-                const yr1 = 2 / life * 100;
+                const ntaLife = isSecondHand ? computeUsedAssetLife(life, vesselAgeYrs) : null;
+                const effectiveLife = ntaLife || life;
+                const yr1 = 2 / effectiveLife * 100;
                 return (
                   <div key={v.id} onClick={() => setVesselTypeId(v.id)} style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 6px", borderRadius: 4, marginBottom: 2, cursor: "pointer", background: isActive ? "rgba(122,162,247,0.08)" : "transparent" }}>
                     <div style={{ flex: 1, fontSize: 10, color: isActive ? "#7aa2f7" : "#a9b1d6", fontWeight: isActive ? 700 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.label}</div>
-                    <div style={{ fontSize: 10, fontFamily: F, color: isJPFlag ? "#9ece6a" : "#a9b1d6", width: 32, textAlign: "right", fontWeight: isJPFlag ? 600 : 400 }}>{v.jpLife}</div>
-                    <div style={{ fontSize: 10, fontFamily: F, color: !isJPFlag ? "#9ece6a" : "#a9b1d6", width: 32, textAlign: "right", fontWeight: !isJPFlag ? 600 : 400 }}>{v.forLife}</div>
+                    <div style={{ fontSize: 10, fontFamily: F, color: isJPFlag && !isSecondHand ? "#9ece6a" : "#a9b1d6", width: 32, textAlign: "right", fontWeight: isJPFlag && !isSecondHand ? 600 : 400 }}>{v.jpLife}</div>
+                    <div style={{ fontSize: 10, fontFamily: F, color: !isJPFlag && !isSecondHand ? "#9ece6a" : "#a9b1d6", width: 32, textAlign: "right", fontWeight: !isJPFlag && !isSecondHand ? 600 : 400 }}>{v.forLife}</div>
+                    {isSecondHand && <div style={{ fontSize: 10, fontFamily: F, color: isActive ? "#e0af68" : "#6b7299", width: 38, textAlign: "right", fontWeight: isActive ? 700 : 400 }}>{ntaLife}yr</div>}
                     <div style={{ fontSize: 10, fontFamily: F, color: "#e0af68", width: 42, textAlign: "right" }}>{yr1.toFixed(1)}%</div>
                   </div>
                 );
