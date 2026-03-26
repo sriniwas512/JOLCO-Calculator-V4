@@ -153,7 +153,8 @@ function Slider({ label, value, onChange, min, max, step, unit, help }) {
 
 export default function JOLCOv3() {
   const [tab, setTab] = useState("deal");
-  const [expandedYear, setExpandedYear] = useState(null); // for clickable hire detail
+  const [expandedYear, setExpandedYear] = useState(null);    // for clickable hire detail
+  const [expandedTaxYear, setExpandedTaxYear] = useState(null); // for clickable tax shield detail
   // Deal
   const [vesselTypeId, setVesselTypeId] = useState("bulk_l");
   const [flagId, setFlagId] = useState("foreign");
@@ -823,8 +824,10 @@ export default function JOLCOv3() {
                         style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: "#9ece6a", cursor: "pointer", textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 3 }}>
                         ${$(y.hireSpread - y.bbcCommCost)} <span style={{ fontSize: 9, color: "#a9b1d6" }}>{isExpanded ? "▲" : "▼"}</span>
                       </td>
-                      <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: y.taxShieldThisYear >= 0 ? "#bb9af7" : "#f7768e" }}>
+                      <td onClick={() => setExpandedTaxYear(expandedTaxYear === y.yr ? null : y.yr)}
+                        style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: y.taxShieldThisYear >= 0 ? "#bb9af7" : "#f7768e", cursor: "pointer", textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 3 }}>
                         {y.taxShieldThisYear >= 0 ? `$${$(y.taxShieldThisYear)}` : `-$${$(Math.abs(y.taxShieldThisYear))}`}
+                        <span style={{ fontSize: 9, color: "#a9b1d6", marginLeft: 3 }}>{expandedTaxYear === y.yr ? "▲" : "▼"}</span>
                       </td>
                       <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: y.residualGain !== 0 ? "#e0af68" : "#a9b1d6" }}>
                         {y.residualGain !== 0 ? `$${$(y.residualGain)}` : "—"}
@@ -832,6 +835,73 @@ export default function JOLCOv3() {
                       <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: y.netCF >= 0 ? "#9ece6a" : "#f7768e", fontWeight: 600 }}>${$(y.netCF)}</td>
                       <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: y.cumulativeEquityCF >= 0 ? "#9ece6a" : "#f7768e" }}>${$(y.cumulativeEquityCF)}</td>
                     </tr>
+                    {expandedTaxYear === y.yr && (
+                      <tr style={{ borderBottom: isExpanded ? "none" : "1px solid #1e2030" }}>
+                        <td colSpan={6} style={{ padding: 0 }}>
+                          <div style={{ margin: "0 8px 8px", padding: 12, borderRadius: 6, background: "#16161e", border: "1px solid #3b4261" }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: "#c0caf5", marginBottom: 8, fontFamily: F }}>Year {y.yr} — Tax Shield Calculation</div>
+                            <div style={{ fontFamily: F, fontSize: 12, lineHeight: 2, color: "#a9b1d6" }}>
+                              {/* SPC P&L build-up */}
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span>Net BB Hire (SPC revenue)</span>
+                                <span style={{ color: "#9ece6a", fontWeight: 700 }}>${$(y.netHire)}</span>
+                              </div>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
+                                Gross hire ${$(y.totalHire)} less BBC commission ${$(y.bbcCommCost)} ({bbcCommission}%)
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "#f7768e" }}>Less: Depreciation (Year {y.yr})</span>
+                                <span style={{ color: "#f7768e" }}>-${$(y.dep)}</span>
+                              </div>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
+                                {y.yr <= R.depr.length
+                                  ? (() => { const d = R.depr[y.yr - 1]; return d ? `${d.method} method — ordinary $${$(d.ordinary)}${d.special > 0 ? ` + special depr $${$(d.special)}` : ""}` : "—"; })()
+                                  : "Beyond depreciation life — $0"}
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "#f7768e" }}>Less: Bank Interest</span>
+                                <span style={{ color: "#f7768e" }}>-${$(y.bankInterest)}</span>
+                              </div>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
+                                {((R.bankAllInRate) * 100).toFixed(2)}% × ${$(y.outstandingDebt + y.bankPrincipal)} outstanding debt balance
+                              </div>
+                              <div style={{ borderTop: "1px dashed #3b4261", marginTop: 4, paddingTop: 4 }} />
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: y.spcTaxablePL >= 0 ? "#e0af68" : "#bb9af7", fontWeight: 700 }}>
+                                  SPC Taxable {y.spcTaxablePL >= 0 ? "Profit" : "Loss"} (flows to TK investors)
+                                </span>
+                                <span style={{ color: y.spcTaxablePL >= 0 ? "#e0af68" : "#bb9af7", fontWeight: 700 }}>
+                                  {y.spcTaxablePL >= 0 ? `$${$(y.spcTaxablePL)}` : `-$${$(Math.abs(y.spcTaxablePL))}`}
+                                </span>
+                              </div>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
+                                Net hire {y.spcTaxablePL >= 0 ? "−" : "+"} depreciation {y.spcTaxablePL >= 0 ? "−" : "+"} interest = {y.spcTaxablePL >= 0 ? "profit → TK investors owe tax" : "loss → TK investors offset against other income"}
+                              </div>
+                              <div style={{ borderTop: "1px dashed #3b4261", marginTop: 4, paddingTop: 4 }} />
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span>× Tax Rate</span>
+                                <span style={{ color: "#c0caf5" }}>{taxRate.toFixed(2)}%</span>
+                              </div>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
+                                Applied to SPC P&L flowing through TK structure to Japanese investors
+                              </div>
+                              <div style={{ borderTop: "1px solid #3b4261", marginTop: 6, paddingTop: 6, display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: y.taxShieldThisYear >= 0 ? "#bb9af7" : "#f7768e", fontWeight: 700, fontSize: 13 }}>
+                                  {y.taxShieldThisYear >= 0 ? "Tax Shield (saving)" : "Tax Liability (extra tax owed)"}
+                                </span>
+                                <span style={{ color: y.taxShieldThisYear >= 0 ? "#bb9af7" : "#f7768e", fontWeight: 700, fontSize: 13 }}>
+                                  {y.taxShieldThisYear >= 0 ? `+$${$(y.taxShieldThisYear)}` : `-$${$(Math.abs(y.taxShieldThisYear))}`}
+                                </span>
+                              </div>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
+                                = −(SPC P&L) × {taxRate.toFixed(2)}% = −({y.spcTaxablePL >= 0 ? "+" : "−"}${$(Math.abs(y.spcTaxablePL))}) × {taxRate.toFixed(2)}%
+                                {y.taxShieldThisYear < 0 && <span style={{ color: "#f7768e" }}> ⚠ Positive SPC profit → TK investors pay additional tax this year</span>}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                     {isExpanded && (
                       <tr style={{ borderBottom: "1px solid #1e2030" }}>
                         <td colSpan={6} style={{ padding: 0 }}>
