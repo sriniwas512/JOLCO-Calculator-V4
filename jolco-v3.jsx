@@ -158,8 +158,9 @@ export default function JOLCOv3() {
   const [saleCommission, setSaleCommission] = useState(2.0);
   const [bbcCommission, setBbcCommission] = useState(1.25);
   // Purchase Option schedule
-  // Default logic: PO price declines by ~(Vessel Price / Amort Period) per year
-  // because the PO tracks the remaining financing balance
+  // Two-anchor system: set the PO price at the first exercise year and the obligatory (last) year.
+  // Intermediate years are linearly interpolated. Both anchors default to the amortisation-based
+  // formula (VP − VP/amortYrs × N) but can be overridden to match a negotiated term sheet.
   const [poFirstYear, setPoFirstYear] = useState(5);
   const [poLastYear, setPoLastYear] = useState(10);
   // Lock-in period: BBC cannot exercise PO before this many years have elapsed
@@ -167,21 +168,41 @@ export default function JOLCOv3() {
   const [lockInPeriod, setLockInPeriod] = useState(4);
   // Effective first PO year respects lock-in: charterer may not exercise before lock-in ends
   const effectivePOFirstYear = Math.max(poFirstYear, lockInPeriod + 1);
-  const effectiveDecline = vesselPrice / amortYrs;
+
+  // Anchor prices — null = auto (amortisation formula)
+  const [poFirstYearPrice, setPoFirstYearPrice] = useState(null); // $M at first PO year
+  const [poLastYearPrice, setPoLastYearPrice] = useState(null);   // $M obligatory year
+
+  // Auto formula values (always computed for display / fallback)
+  const autoFirstYearPrice = Math.max(0, Math.round((vesselPrice - (vesselPrice / amortYrs) * effectivePOFirstYear) * 10) / 10);
+  const autoLastYearPrice  = Math.max(0, Math.round((vesselPrice - (vesselPrice / amortYrs) * poLastYear) * 10) / 10);
+
+  const effectiveFirstPrice = poFirstYearPrice ?? autoFirstYearPrice;
+  const effectiveLastPrice  = poLastYearPrice  ?? autoLastYearPrice;
+
+  // Annual decline derived from the two anchors (uniform across the PO window)
+  const poWindowYrs = poLastYear - effectivePOFirstYear; // number of intervals
+  const effectiveDecline = poWindowYrs > 0
+    ? (effectiveFirstPrice - effectiveLastPrice) / poWindowYrs
+    : vesselPrice / amortYrs;
 
   // Auto-generate schedule but allow per-year overrides
   const [poOverrides, setPoOverrides] = useState({}); // { [yr]: price } for manual edits
   const poSchedule = useMemo(() => {
     const sched = [];
-    // PO at first option year ≈ vessel price minus principal repaid up to that point
-    const annualRepay = vesselPrice / amortYrs;
     for (let yr = effectivePOFirstYear; yr <= poLastYear; yr++) {
-      const defaultPrice = Math.max(0, vesselPrice - annualRepay * yr);
-      const price = poOverrides[yr] != null ? poOverrides[yr] : Math.round(defaultPrice * 10) / 10;
+      let defaultPrice;
+      if (yr === poLastYear) {
+        defaultPrice = effectiveLastPrice; // anchor exact at obligatory year
+      } else {
+        const stepsFromFirst = yr - effectivePOFirstYear;
+        defaultPrice = Math.max(0, Math.round((effectiveFirstPrice - stepsFromFirst * effectiveDecline) * 10) / 10);
+      }
+      const price = poOverrides[yr] != null ? poOverrides[yr] : defaultPrice;
       sched.push({ yr, price, obligatory: yr === poLastYear, isOverridden: poOverrides[yr] != null });
     }
     return sched;
-  }, [vesselPrice, amortYrs, effectivePOFirstYear, poLastYear, poOverrides]);
+  }, [effectivePOFirstYear, poLastYear, effectiveFirstPrice, effectiveLastPrice, effectiveDecline, poOverrides]);
 
   const [exerciseYear, setExerciseYear] = useState(10);
   // Ensure exerciseYear is within PO range and respects lock-in period
@@ -345,7 +366,7 @@ export default function JOLCOv3() {
     const spread = blendedIRR != null ? blendedIRR - treasPostTaxYield / 100 : null;
 
     return { VP, debt, equity, saleCommCost, totalBbcComm, totalEquityDeployed, equityCF, equityCF_noTax, years, depr, blendedIRR, equityIRR, treasTerminal, treasProfit, jolcoProfit, spread, totalStream1, totalStream2, totalStream3, monthlyFixed, bankAllInRate, equityAllInRate, poPriceMil, treasPostTaxYield };
-  }, [vesselPrice, debtPct, amortYrs, sofrRate, spreadBps, jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission, taxRate, foreignInterestTaxPct, usefulLife, specialDeprPct, treasuryYield, flagId, effectiveExerciseYear, poSchedule, lockInPeriod]);
+  }, [vesselPrice, debtPct, amortYrs, sofrRate, spreadBps, jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission, taxRate, foreignInterestTaxPct, usefulLife, specialDeprPct, treasuryYield, flagId, effectiveExerciseYear, poSchedule, lockInPeriod, poFirstYearPrice, poLastYearPrice]);
 
   const C = { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginBottom: 14 };
   const H = (color, text) => <div style={{ fontSize: 13, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 }}><span style={{ color }}>●</span>{text}</div>;
@@ -547,9 +568,50 @@ export default function JOLCOv3() {
                   </div>
                 )}
               </div>
-              {/* Auto-decline info */}
-              <div style={{ padding: 8, borderRadius: 5, background: "#1e2030", marginBottom: 10, fontSize: 10, color: "#a9b1d6", lineHeight: 1.5 }}>
-                <strong style={{ color: "#bb9af7" }}>Default PO decline:</strong> ${$d(effectiveDecline, 2)}M/yr (= Vessel Price ÷ Amort Period). PO tracks remaining financing balance. Edit any year below to override.
+              {/* Anchor prices — first and last year PO */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                {/* PO at first exercise year */}
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#9ece6a", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" }}>
+                    PO Yr {effectivePOFirstYear} Price
+                  </label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <input type="number" step={0.1}
+                      value={poFirstYearPrice ?? autoFirstYearPrice}
+                      onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setPoFirstYearPrice(v); }}
+                      style={{ flex: 1, padding: "6px 8px", borderRadius: 5, border: `1px solid ${poFirstYearPrice != null ? "#9ece6a" : "#3b4261"}`, background: "#1a1b26", color: poFirstYearPrice != null ? "#9ece6a" : "#c0caf5", fontSize: 13, fontFamily: F }} />
+                    <span style={{ fontSize: 10, color: "#a9b1d6" }}>$M</span>
+                  </div>
+                  {poFirstYearPrice != null && (
+                    <button onClick={() => setPoFirstYearPrice(null)} style={{ fontSize: 9, color: "#f7768e", background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>reset (auto: ${$d(autoFirstYearPrice, 1)}M)</button>
+                  )}
+                  {poFirstYearPrice == null && <div style={{ fontSize: 9, color: "#565f89", marginTop: 2 }}>auto: ${$d(autoFirstYearPrice, 1)}M</div>}
+                </div>
+                {/* Obligatory (last year) PO */}
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#f7768e", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" }}>
+                    Obligatory Yr {poLastYear}
+                  </label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <input type="number" step={0.1}
+                      value={poLastYearPrice ?? autoLastYearPrice}
+                      onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setPoLastYearPrice(v); }}
+                      style={{ flex: 1, padding: "6px 8px", borderRadius: 5, border: `1px solid ${poLastYearPrice != null ? "#f7768e" : "#3b4261"}`, background: "#1a1b26", color: poLastYearPrice != null ? "#f7768e" : "#c0caf5", fontSize: 13, fontFamily: F }} />
+                    <span style={{ fontSize: 10, color: "#a9b1d6" }}>$M</span>
+                  </div>
+                  {poLastYearPrice != null && (
+                    <button onClick={() => setPoLastYearPrice(null)} style={{ fontSize: 9, color: "#f7768e", background: "none", border: "none", cursor: "pointer", padding: "2px 0" }}>reset (auto: ${$d(autoLastYearPrice, 1)}M)</button>
+                  )}
+                  {poLastYearPrice == null && <div style={{ fontSize: 9, color: "#565f89", marginTop: 2 }}>auto: ${$d(autoLastYearPrice, 1)}M</div>}
+                </div>
+              </div>
+              {/* PO decline info derived from anchors */}
+              <div style={{ padding: 8, borderRadius: 5, background: "#1e2030", marginBottom: 10, fontSize: 10, color: "#a9b1d6", lineHeight: 1.6 }}>
+                <strong style={{ color: "#bb9af7" }}>Annual PO decline:</strong> ${$d(effectiveDecline, 3)}M/yr
+                {(poFirstYearPrice != null || poLastYearPrice != null)
+                  ? <span style={{ color: "#9ece6a" }}> (from anchors)</span>
+                  : <span style={{ color: "#565f89" }}> (= VP ÷ amortYrs = auto)</span>}
+                {" · "}Intermediate years interpolated. Override any row below for non-linear schedules.
               </div>
               {/* Locked years — visual indicator */}
               {lockInPeriod > 0 && (
