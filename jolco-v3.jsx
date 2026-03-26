@@ -197,10 +197,10 @@ export default function JOLCOv3() {
   const effectiveExerciseYear = Math.max(effectivePOFirstYear, Math.min(poLastYear, exerciseYear));
   // Tax
   const [taxRate, setTaxRate] = useState(30.62);
-  // Capital-gains tax rate on PO exercise: in Japan, corporate cap gains are taxed as ordinary
-  // income (no preferential rate), so this defaults to the same rate as taxRate.
-  // Keep it independent so it can be adjusted for non-JP investors or treaty scenarios.
-  const [capGainsTaxRate, setCapGainsTaxRate] = useState(30.62);
+  // Capital-gains tax rate on PO exercise: JP individual investor rate = 20.315%
+  // (15.315% national income tax incl. 2.1% reconstruction surtax + 5% local inhabitant tax)
+  // Distinct from the ordinary corporate income rate used for Stream 2.
+  const [capGainsTaxRate, setCapGainsTaxRate] = useState(20.315);
   const [foreignInterestTaxPct, setForeignInterestTaxPct] = useState(27); // JP SME corporate rate on foreign interest — US levies 0% (Portfolio Interest Exemption IRC §871h); Japan taxes at full corp rate (~27% SME, 30.62% large corp)
   const [specialDeprPct, setSpecialDeprPct] = useState(0);
   const [treasuryYield, setTreasuryYield] = useState(4.25);
@@ -626,7 +626,7 @@ export default function JOLCOv3() {
               ))}
               <div style={{ marginTop: 10, borderTop: "1px solid #292e42", paddingTop: 10 }}>
                 <Inp label="Ordinary Income Tax Rate" value={taxRate} onChange={setTaxRate} unit="%" help={`${taxRate}% · std JP corp (23.2%) + local + defense surtax. Applied to Stream 2 (tax shield on hire income / depreciation losses).`} step={0.01} />
-                <Inp label="Cap-Gains Tax Rate (PO)" value={capGainsTaxRate} onChange={setCapGainsTaxRate} unit="%" help={`Applied to Stream 3: max(0, PO price − tax book value). In Japan, corporate cap gains are taxed as ordinary income (no preferential rate) → default equals ordinary rate. Adjust for non-JP investors or tax-treaty scenarios.`} step={0.01} />
+                <Inp label="Cap-Gains Tax Rate (PO)" value={capGainsTaxRate} onChange={setCapGainsTaxRate} unit="%" help="Applied to Stream 3: max(0, PO price − tax book value). Default 20.315% = JP individual rate (15.315% national incl. 2.1% reconstruction surtax + 5% local inhabitant tax). Adjust for corporate investors (30.62%) or treaty scenarios." step={0.01} />
                 <Inp label="US Treasury Yield" value={treasuryYield} onChange={setTreasuryYield} unit="%" step={0.01} />
                 <Inp label="JP Tax on Foreign Interest" value={foreignInterestTaxPct} onChange={setForeignInterestTaxPct} unit="%" step={0.01} help="JP SME corp rate ~27%, large corp 30.62%. No preferential rate for corps on foreign interest. US charges 0% (Portfolio Interest Exemption, IRC §871h)." />
                 <Slider label="Special Depreciation (Yr1)" value={specialDeprPct} onChange={(v) => setSpecialDeprPct(Math.min(v, flagInfo.specialMax))} min={0} max={flagInfo.specialMax} step={1} unit="%" help={`MLIT advanced vessels: ${flagInfo.specialMin}–${flagInfo.specialMax}% for ${flagInfo.label}`} />
