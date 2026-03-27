@@ -155,6 +155,7 @@ export default function JOLCOv3() {
   const [tab, setTab] = useState("deal");
   const [expandedYear, setExpandedYear] = useState(null);    // for clickable hire detail
   const [expandedTaxYear, setExpandedTaxYear] = useState(null); // for clickable tax shield detail
+  const [expandedResidualYear, setExpandedResidualYear] = useState(null); // for clickable residual detail
   // Deal
   const [vesselTypeId, setVesselTypeId] = useState("bulk_l");
   const [flagId, setFlagId] = useState("foreign");
@@ -840,8 +841,10 @@ export default function JOLCOv3() {
                         {y.taxShieldThisYear >= 0 ? `$${$(y.taxShieldThisYear)}` : `-$${$(Math.abs(y.taxShieldThisYear))}`}
                         <span style={{ fontSize: 9, color: "#a9b1d6", marginLeft: 3 }}>{expandedTaxYear === y.yr ? "▲" : "▼"}</span>
                       </td>
-                      <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: y.residualGain !== 0 ? "#e0af68" : "#a9b1d6" }}>
+                      <td onClick={() => y.residualGain !== 0 ? setExpandedResidualYear(expandedResidualYear === y.yr ? null : y.yr) : null}
+                        style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: y.residualGain !== 0 ? "#e0af68" : "#a9b1d6", cursor: y.residualGain !== 0 ? "pointer" : "default", textDecoration: y.residualGain !== 0 ? "underline" : "none", textDecorationStyle: "dotted", textUnderlineOffset: 3 }}>
                         {y.residualGain !== 0 ? `$${$(y.residualGain)}` : "—"}
+                        {y.residualGain !== 0 && <span style={{ fontSize: 9, color: "#a9b1d6", marginLeft: 3 }}>{expandedResidualYear === y.yr ? "▲" : "▼"}</span>}
                       </td>
                       <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: y.netCF >= 0 ? "#9ece6a" : "#f7768e", fontWeight: 600 }}>${$(y.netCF)}</td>
                       <td style={{ padding: "5px 8px", textAlign: "right", fontFamily: F, color: y.cumulativeEquityCF >= 0 ? "#9ece6a" : "#f7768e" }}>${$(y.cumulativeEquityCF)}</td>
@@ -907,6 +910,57 @@ export default function JOLCOv3() {
                               <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
                                 = −(SPC P&L) × {taxRate.toFixed(2)}% = −({y.spcTaxablePL >= 0 ? "+" : "−"}${$(Math.abs(y.spcTaxablePL))}) × {taxRate.toFixed(2)}%
                                 {y.taxShieldThisYear < 0 && <span style={{ color: "#f7768e" }}> ⚠ Positive SPC profit → TK investors pay additional tax this year</span>}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {expandedResidualYear === y.yr && y.residualGain !== 0 && (
+                      <tr style={{ borderBottom: isExpanded ? "none" : "1px solid #1e2030" }}>
+                        <td colSpan={6} style={{ padding: 0 }}>
+                          <div style={{ margin: "0 8px 8px", padding: 12, borderRadius: 6, background: "#16161e", border: "1px solid #3b4261" }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: "#c0caf5", marginBottom: 8, fontFamily: F }}>Year {y.yr} — Residual / PO Exercise Calculation</div>
+                            <div style={{ fontFamily: F, fontSize: 12, lineHeight: 2, color: "#a9b1d6" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span>PO Exercise Price</span>
+                                <span style={{ color: "#e0af68", fontWeight: 700 }}>${$(y.poExercise)}</span>
+                              </div>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
+                                Pre-agreed purchase option price the charterer pays to buy the vessel back
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "#f7768e" }}>Less: Remaining Bank Debt</span>
+                                <span style={{ color: "#f7768e" }}>-${$(y.outstandingDebt)}</span>
+                              </div>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
+                                Outstanding loan balance after Yr {y.yr} principal payment — SPC repays bank first from PO proceeds
+                              </div>
+                              <div style={{ borderTop: "1px dashed #3b4261", marginTop: 4, paddingTop: 4 }} />
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ fontWeight: 700 }}>Gross Proceeds to Equity</span>
+                                <span style={{ color: "#c0caf5", fontWeight: 700 }}>${$(y.poExercise - y.outstandingDebt)}</span>
+                              </div>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
+                                PO price minus remaining debt — what flows to TK investors before tax
+                              </div>
+                              <div style={{ borderTop: "1px dashed #3b4261", marginTop: 4, paddingTop: 4 }} />
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "#f7768e" }}>Less: Capital Gains Tax ({capGainsTaxRate}%)</span>
+                                <span style={{ color: "#f7768e" }}>-${$(y.capGainTax)}</span>
+                              </div>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
+                                Taxable gain = max(0, PO price ${$(y.poExercise)} − book value ${$(y.bookVal)}) = ${$(Math.max(0, y.poExercise - y.bookVal))} × {capGainsTaxRate}%
+                              </div>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
+                                Book value is low after {y.yr} yrs of accelerated depreciation — most of the gain is taxable
+                              </div>
+                              <div style={{ borderTop: "1px solid #3b4261", marginTop: 6, paddingTop: 6, display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "#e0af68", fontWeight: 700, fontSize: 13 }}>Net Residual to Equity (Stream 3)</span>
+                                <span style={{ color: "#e0af68", fontWeight: 700, fontSize: 13 }}>+${$(y.residualGain)}</span>
+                              </div>
+                              <div style={{ paddingLeft: 12, fontSize: 11, color: "#a9b1d6" }}>
+                                = Gross proceeds ${$(y.poExercise - y.outstandingDebt)} − cap gains tax ${$(y.capGainTax)}
                               </div>
                             </div>
                           </div>
