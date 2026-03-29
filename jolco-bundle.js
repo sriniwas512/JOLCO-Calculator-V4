@@ -21526,6 +21526,277 @@
     }
     return sched;
   }
+  function computeDealOutputs(inp) {
+    const {
+      vesselPrice,
+      debtPct,
+      amortYrs,
+      sofrRate,
+      spreadBps,
+      jpyBaseRate,
+      bankSpreadBps,
+      swapCostBps,
+      saleCommission,
+      bbcCommission,
+      taxRate,
+      capGainsTaxRate,
+      foreignInterestTaxPct,
+      usefulLife,
+      specialDeprPct,
+      treasuryYield,
+      effectiveExerciseYear,
+      poPriceMil
+    } = inp;
+    const VP = vesselPrice * 1e6;
+    const debt = VP * debtPct / 100;
+    const equity = VP - debt;
+    const annualPrincipal = VP / amortYrs;
+    const bankAllInRate = (jpyBaseRate + bankSpreadBps / 100) / 100 + swapCostBps / 1e4;
+    const equityAllInRate = (sofrRate + spreadBps / 100) / 100;
+    const saleCommCost = VP * saleCommission / 100;
+    const depreciableBase = VP + saleCommCost;
+    const depr = computeDepr(depreciableBase, usefulLife, specialDeprPct);
+    const equityCF = [-(equity + saleCommCost)];
+    const equityCF_noTax = [-(equity + saleCommCost)];
+    const years = [];
+    let outstandingTotal = VP;
+    let outstandingDebt = debt;
+    let outstandingEquity = equity;
+    let cumulativeEquityCF = -(equity + saleCommCost);
+    let totalStream1 = 0, totalStream2 = 0, totalStream3 = 0, totalBbcComm = 0;
+    for (let yr = 1; yr <= effectiveExerciseYear; yr++) {
+      const fixedHire = Math.min(annualPrincipal, outstandingTotal);
+      const variableHire = outstandingTotal * equityAllInRate;
+      const totalHire = fixedHire + variableHire;
+      const bbcCommCost = totalHire * bbcCommission / 100;
+      const netHire = totalHire - bbcCommCost;
+      const bankPrincipal = Math.min(annualPrincipal * (debtPct / 100), outstandingDebt);
+      const bankInterest = outstandingDebt * bankAllInRate;
+      const equityPrincipalReturn = Math.min(annualPrincipal * ((100 - debtPct) / 100), outstandingEquity);
+      const netHireToEquity = netHire - bankPrincipal - bankInterest;
+      const hireSpread = netHireToEquity - equityPrincipalReturn;
+      const dep = yr <= depr.length ? depr[yr - 1] : { total: 0, bv: 0 };
+      const spcTaxablePL = netHire - dep.total - bankInterest;
+      const taxShieldThisYear = -spcTaxablePL * (taxRate / 100);
+      const isExitYear = yr === effectiveExerciseYear;
+      let residualToEquity = 0, capGainTax = 0;
+      if (isExitYear) {
+        const remainDebt = outstandingDebt - bankPrincipal;
+        const grossResidual = poPriceMil - remainDebt;
+        const bookVal = dep.bv;
+        const capGain = Math.max(0, poPriceMil - bookVal);
+        capGainTax = capGain * capGainsTaxRate / 100;
+        residualToEquity = grossResidual - capGainTax;
+      }
+      const netCF = equityPrincipalReturn + hireSpread + taxShieldThisYear + (isExitYear ? residualToEquity : 0);
+      const netCF_noTax = equityPrincipalReturn + hireSpread + (isExitYear ? residualToEquity : 0);
+      outstandingTotal = Math.max(0, outstandingTotal - annualPrincipal);
+      outstandingDebt = Math.max(0, outstandingDebt - bankPrincipal);
+      outstandingEquity = Math.max(0, outstandingEquity - equityPrincipalReturn);
+      cumulativeEquityCF += netCF;
+      totalStream1 += hireSpread;
+      totalStream2 += taxShieldThisYear;
+      totalBbcComm += bbcCommCost;
+      if (isExitYear) totalStream3 = residualToEquity;
+      equityCF.push(netCF);
+      equityCF_noTax.push(netCF_noTax);
+      years.push({
+        yr,
+        fixedHire,
+        variableHire,
+        totalHire,
+        bbcCommCost,
+        netHire,
+        bankPrincipal,
+        bankInterest,
+        equityPrincipalReturn,
+        hireSpread,
+        dep: dep.total,
+        spcTaxablePL,
+        taxShieldThisYear,
+        residualGain: isExitYear ? residualToEquity : 0,
+        poExercise: isExitYear ? poPriceMil : 0,
+        capGainTax,
+        netCF,
+        netCF_noTax,
+        cumulativeEquityCF,
+        outstandingDebt,
+        outstandingEquity,
+        outstandingTotal,
+        bookVal: dep.bv
+      });
+    }
+    const blendedIRR = solveIRR(equityCF);
+    const equityIRR = solveIRR(equityCF_noTax);
+    const totalEquityDeployed = equity + saleCommCost;
+    const treasPostTaxYield = treasuryYield * (1 - foreignInterestTaxPct / 100);
+    const treasTerminal = totalEquityDeployed * Math.pow(1 + treasPostTaxYield / 100, effectiveExerciseYear);
+    const treasProfit = treasTerminal - totalEquityDeployed;
+    const jolcoProfit = equityCF.reduce((a, b) => a + b, 0);
+    const spread = blendedIRR != null ? blendedIRR - treasPostTaxYield / 100 : null;
+    const annPrincipal = VP / amortYrs;
+    const remainingBalAtExercise = Math.max(0, VP - annPrincipal * effectiveExerciseYear);
+    const poPremiumPct = remainingBalAtExercise > 0 ? (poPriceMil - remainingBalAtExercise) / remainingBalAtExercise * 100 : null;
+    return {
+      VP,
+      debt,
+      equity,
+      saleCommCost,
+      totalBbcComm,
+      totalEquityDeployed,
+      equityCF,
+      equityCF_noTax,
+      years,
+      depr,
+      blendedIRR,
+      equityIRR,
+      treasTerminal,
+      treasProfit,
+      jolcoProfit,
+      spread,
+      totalStream1,
+      totalStream2,
+      totalStream3,
+      bankAllInRate,
+      equityAllInRate,
+      poPriceMil,
+      treasPostTaxYield,
+      remainingBalAtExercise,
+      poPremiumPct,
+      monthlyFixed: annualPrincipal / 12
+    };
+  }
+  var IRR_COLOR_ANCHORS = [
+    { irr: -0.1, r: 45, g: 10, b: 10 },
+    { irr: -0.05, r: 168, g: 21, b: 46 },
+    { irr: 0, r: 247, g: 118, b: 142 },
+    { irr: 0.03, r: 255, g: 158, b: 100 },
+    { irr: 0.06, r: 224, g: 175, b: 104 },
+    { irr: 0.1, r: 158, g: 206, b: 106 },
+    { irr: 0.13, r: 26, g: 188, b: 156 }
+  ];
+  function irrToColor(irr) {
+    if (irr == null) return "#24283b";
+    const c = Math.max(-0.1, Math.min(0.13, irr));
+    for (let i = 0; i < IRR_COLOR_ANCHORS.length - 1; i++) {
+      const lo = IRR_COLOR_ANCHORS[i], hi = IRR_COLOR_ANCHORS[i + 1];
+      if (c >= lo.irr && c <= hi.irr) {
+        const t = (c - lo.irr) / (hi.irr - lo.irr);
+        const r = Math.round(lo.r + t * (hi.r - lo.r));
+        const g = Math.round(lo.g + t * (hi.g - lo.g));
+        const b = Math.round(lo.b + t * (hi.b - lo.b));
+        return `rgb(${r},${g},${b})`;
+      }
+    }
+    const last = IRR_COLOR_ANCHORS[IRR_COLOR_ANCHORS.length - 1];
+    return `rgb(${last.r},${last.g},${last.b})`;
+  }
+  function generateAxisValues(varKey, currentVal) {
+    const CFG = {
+      spreadBps: { step: 25, count: 9, mode: "centred" },
+      poPremiumPct: { step: 5, count: 9, mode: "range", min: -10, max: 30 },
+      debtPct: { step: 5, count: 8, mode: "range", min: 50, max: 85 },
+      taxRate: { step: 2, count: 9, mode: "range", min: 20, max: 36 },
+      sofrRate: { step: 0.5, count: 9, mode: "range", min: 2, max: 6 },
+      vesselPrice: { count: 9, mode: "pct", pct: 0.3 },
+      specialDeprPct: { step: 5, count: 7, mode: "range", min: 0, max: 30 }
+    };
+    const cfg = CFG[varKey];
+    if (!cfg) return [currentVal];
+    if (cfg.mode === "centred") {
+      const vals = [];
+      const half = Math.floor(cfg.count / 2);
+      for (let i = -half; i <= half; i++) vals.push(Math.round(currentVal + i * cfg.step));
+      return vals;
+    }
+    if (cfg.mode === "range") {
+      const vals = [];
+      for (let v = cfg.min; v <= cfg.max; v += cfg.step) vals.push(v);
+      return vals.length > 0 ? vals : [currentVal];
+    }
+    if (cfg.mode === "pct") {
+      const lo = currentVal * (1 - cfg.pct), hi = currentVal * (1 + cfg.pct);
+      const step = (hi - lo) / (cfg.count - 1);
+      return Array.from({ length: cfg.count }, (_, i) => parseFloat((lo + i * step).toFixed(2)));
+    }
+    return [currentVal];
+  }
+  function bisectBreakeven(baseInputs, varKey, target) {
+    const RANGES = {
+      spreadBps: { min: Math.max(0, baseInputs.spreadBps - 200), max: baseInputs.spreadBps + 200 },
+      poPremiumPct: { min: -10, max: 30 }
+    };
+    const range = RANGES[varKey];
+    if (!range) return null;
+    const evalIRR = (val) => {
+      const inp = { ...baseInputs };
+      if (varKey === "poPremiumPct") {
+        const remBal = Math.max(0, inp.vesselPrice * 1e6 - inp.vesselPrice * 1e6 / inp.amortYrs * inp.effectiveExerciseYear);
+        inp.poPriceMil = remBal * (1 + val / 100);
+      } else {
+        inp[varKey] = val;
+      }
+      try {
+        const r = computeDealOutputs(inp);
+        return r.blendedIRR;
+      } catch (_) {
+        return null;
+      }
+    };
+    const fLo = evalIRR(range.min);
+    const fHi = evalIRR(range.max);
+    if (fLo == null || fHi == null) return "N/A";
+    if (fLo >= target && fHi >= target) return "< " + range.min;
+    if (fLo <= target && fHi <= target) return "> " + range.max;
+    if ((fLo - target) * (fHi - target) > 0) return "N/A";
+    let lo = range.min, hi = range.max;
+    for (let i = 0; i < 80; i++) {
+      const mid = (lo + hi) / 2;
+      const fMid = evalIRR(mid);
+      if (fMid == null) break;
+      if (Math.abs(fMid - target) < 1e-6) return parseFloat(mid.toFixed(2));
+      if ((fMid - target) * (fLo - target) < 0) hi = mid;
+      else lo = mid;
+    }
+    return parseFloat(((lo + hi) / 2).toFixed(2));
+  }
+  var TORNADO_SHOCKS = [
+    { key: "spreadBps", label: "Equity Spread", shock: 100, isPct: false },
+    { key: "poPremiumPct", label: "PO Premium", shock: 5, isPct: true },
+    { key: "debtPct", label: "Leverage (Debt %)", shock: 5, isPct: false },
+    { key: "sofrRate", label: "SOFR Rate", shock: 0.5, isPct: false },
+    { key: "vesselPrice", label: "Vessel Price", pctShock: 0.1, isPct: false },
+    { key: "taxRate", label: "Investor Tax Rate", shock: 2, isPct: false },
+    { key: "specialDeprPct", label: "Special Depr", shock: 5, isPct: false }
+  ];
+  function computeTornadoData(baseInputs, baseIRR) {
+    const results = [];
+    for (const s of TORNADO_SHOCKS) {
+      const shockAmt = s.pctShock ? baseInputs.vesselPrice * s.pctShock : s.shock;
+      const irrs = [1, -1].map((sign) => {
+        const inp = { ...baseInputs };
+        if (s.isPct) {
+          const remBal = Math.max(0, inp.vesselPrice * 1e6 - inp.vesselPrice * 1e6 / inp.amortYrs * inp.effectiveExerciseYear);
+          const currentPct = baseInputs.poPremiumPct ?? 0;
+          inp.poPriceMil = remBal * (1 + (currentPct + sign * shockAmt) / 100);
+        } else {
+          inp[s.key] = baseInputs[s.key] + sign * shockAmt;
+        }
+        try {
+          const r = computeDealOutputs(inp);
+          return r.blendedIRR;
+        } catch (_) {
+          return null;
+        }
+      });
+      const [irrUp, irrDown] = irrs;
+      const lo = irrDown != null && irrUp != null ? Math.min(irrDown, irrUp) : null;
+      const hi = irrDown != null && irrUp != null ? Math.max(irrDown, irrUp) : null;
+      const impact = lo != null && hi != null ? hi - lo : 0;
+      results.push({ key: s.key, label: s.label, lo, hi, impact, irrUp, irrDown });
+    }
+    return results.sort((a, b) => b.impact - a.impact);
+  }
   var $ = (n) => n == null || isNaN(n) ? "\u2014" : n.toLocaleString("en-US", { maximumFractionDigits: 0 });
   var $d = (n, d = 2) => n == null || isNaN(n) ? "\u2014" : n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
   var pct = (n) => n == null || isNaN(n) ? "\u2014" : (n * 100).toFixed(2) + "%";
@@ -21559,6 +21830,537 @@
         style: { width: "100%", height: 6, borderRadius: 3, appearance: "none", background: `linear-gradient(to right, #7aa2f7 ${(value - min) / (max - min) * 100}%, #3b4261 ${(value - min) / (max - min) * 100}%)`, cursor: "pointer", outline: "none" }
       }
     ), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 10, color: "#a9b1d6", marginTop: 2 } }, /* @__PURE__ */ import_react.default.createElement("span", null, min, unit), /* @__PURE__ */ import_react.default.createElement("span", null, max, unit)), help && /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", marginTop: 2 } }, help));
+  }
+  function HeatmapCanvas({ grid, xLabels, yLabels, xVar, yVar, onCellClick }) {
+    const canvasRef = import_react.default.useRef(null);
+    const [tooltip, setTooltip] = import_react.default.useState(null);
+    const containerRef = import_react.default.useRef(null);
+    const [canvasSize, setCanvasSize] = import_react.default.useState({ w: 800, h: 480 });
+    import_react.default.useEffect(() => {
+      if (!containerRef.current) return;
+      const w = containerRef.current.offsetWidth;
+      setCanvasSize({ w, h: Math.max(300, Math.round(w * 0.55)) });
+    }, []);
+    import_react.default.useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas || !grid || grid.length === 0) return;
+      const ctx = canvas.getContext("2d");
+      const W = canvas.width, H = canvas.height;
+      const padL = 52, padB = 36, padT = 10, padR = 10;
+      const rows = grid.length, cols = grid[0].length;
+      const cellW = (W - padL - padR) / cols;
+      const cellH = (H - padT - padB) / rows;
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = "#16161e";
+      ctx.fillRect(0, 0, W, H);
+      for (let yi = 0; yi < rows; yi++) {
+        for (let xi = 0; xi < cols; xi++) {
+          const cell = grid[yi][xi];
+          const cx = padL + xi * cellW;
+          const cy = padT + yi * cellH;
+          ctx.fillStyle = irrToColor(cell.blendedIRR);
+          ctx.fillRect(cx, cy, cellW - 1, cellH - 1);
+          const centerY = Math.floor(rows / 2), centerX = Math.floor(cols / 2);
+          if (yi === centerY && xi === centerX) {
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(cx + 1, cy + 1, cellW - 3, cellH - 3);
+          }
+          if (cellW >= 40) {
+            ctx.fillStyle = cell.blendedIRR == null ? "#565f89" : "#ffffff";
+            ctx.font = `bold ${Math.min(11, cellW / 5)}px 'JetBrains Mono', monospace`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            const label = cell.blendedIRR == null ? "\u2014" : (cell.blendedIRR * 100).toFixed(1) + "%";
+            ctx.fillText(label, cx + cellW / 2, cy + cellH / 2);
+          }
+        }
+      }
+      ctx.fillStyle = "#a9b1d6";
+      ctx.font = "10px 'Inter', sans-serif";
+      ctx.textAlign = "right";
+      for (let yi = 0; yi < rows; yi++) {
+        const cy = padT + yi * cellH + cellH / 2;
+        ctx.fillText(String(yLabels[yi]), padL - 4, cy);
+      }
+      ctx.textAlign = "center";
+      for (let xi = 0; xi < cols; xi++) {
+        const cx = padL + xi * cellW + cellW / 2;
+        ctx.fillText(String(xLabels[xi]), cx, H - padB + 14);
+      }
+    }, [grid, xLabels, yLabels]);
+    const handleMouseMove = (e) => {
+      if (!grid || grid.length === 0) return;
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+      const padL = 52, padB = 36, padT = 10, padR = 10;
+      const rows = grid.length, cols = grid[0].length;
+      const cellW = (canvas.width - padL - padR) / cols;
+      const cellH = (canvas.height - padT - padB) / rows;
+      const xi = Math.floor((mx - padL) / cellW);
+      const yi = Math.floor((my - padT) / cellH);
+      if (xi >= 0 && xi < cols && yi >= 0 && yi < rows) {
+        setTooltip({ screenX: e.clientX, screenY: e.clientY, cell: grid[yi][xi] });
+      } else {
+        setTooltip(null);
+      }
+    };
+    const handleClick = (e) => {
+      if (!grid || grid.length === 0 || !onCellClick) return;
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+      const padL = 52, padB = 36, padT = 10, padR = 10;
+      const rows = grid.length, cols = grid[0].length;
+      const cellW = (canvas.width - padL - padR) / cols;
+      const cellH = (canvas.height - padT - padB) / rows;
+      const xi = Math.floor((mx - padL) / cellW);
+      const yi = Math.floor((my - padT) / cellH);
+      if (xi >= 0 && xi < cols && yi >= 0 && yi < rows) {
+        const cell = grid[yi][xi];
+        if (cell.blendedIRR != null) onCellClick(cell);
+      }
+    };
+    const $d2 = (n) => n != null ? (n * 100).toFixed(2) + "%" : "\u2014";
+    const moicFmt = (n) => n != null ? n.toFixed(2) + "\xD7" : "\u2014";
+    return /* @__PURE__ */ import_react.default.createElement("div", { ref: containerRef, style: { position: "relative", width: "100%" } }, /* @__PURE__ */ import_react.default.createElement(
+      "canvas",
+      {
+        ref: canvasRef,
+        width: canvasSize.w,
+        height: canvasSize.h,
+        style: { width: "100%", height: "auto", cursor: "crosshair", display: "block" },
+        onMouseMove: handleMouseMove,
+        onMouseLeave: () => setTooltip(null),
+        onClick: handleClick
+      }
+    ), tooltip && tooltip.cell && /* @__PURE__ */ import_react.default.createElement("div", { style: {
+      position: "fixed",
+      left: tooltip.screenX + 14,
+      top: tooltip.screenY - 10,
+      background: "#1a1b26",
+      border: "1px solid #3b4261",
+      borderRadius: 6,
+      padding: "7px 10px",
+      fontSize: 11,
+      fontFamily: "'JetBrains Mono', monospace",
+      color: "#c0caf5",
+      pointerEvents: "none",
+      zIndex: 9999,
+      whiteSpace: "nowrap",
+      boxShadow: "0 4px 16px rgba(0,0,0,0.5)"
+    } }, tooltip.cell.blendedIRR == null ? /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#565f89" } }, "IRR not computable \u2014 cashflows do not produce a real solution at this parameter combination") : /* @__PURE__ */ import_react.default.createElement(import_react.default.Fragment, null, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#7aa2f7" } }, xVar, ": ", tooltip.cell.xVal), " \xB7 ", /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#bb9af7" } }, yVar, ": ", tooltip.cell.yVal), " \u2192 ", /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#9ece6a" } }, "Blended IRR: ", $d2(tooltip.cell.blendedIRR)), " | ", /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68" } }, "Equity IRR: ", $d2(tooltip.cell.equityIRR)), " | ", /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#c0caf5" } }, "MoIC: ", moicFmt(tooltip.cell.moic)))));
+  }
+  var AXIS_VARS = [
+    { key: "spreadBps", label: "Equity Spread (bps)", unit: "bps" },
+    { key: "poPremiumPct", label: "PO Premium over Balance (%)", unit: "%" },
+    { key: "debtPct", label: "Leverage \u2014 Debt %", unit: "%" },
+    { key: "taxRate", label: "Investor Tax Rate %", unit: "%" },
+    { key: "sofrRate", label: "SOFR Rate %", unit: "%" },
+    { key: "vesselPrice", label: "Vessel Price ($M)", unit: "$M" },
+    { key: "specialDeprPct", label: "Special Depreciation %", unit: "%" }
+  ];
+  function SensitivityTab({ R, baseInputs, heatXVar, setHeatXVar, heatYVar, setHeatYVar, onCellClick }) {
+    const [grid, setGrid] = import_react.default.useState(null);
+    const [xVals, setXVals] = import_react.default.useState([]);
+    const [yVals, setYVals] = import_react.default.useState([]);
+    const debounceRef = import_react.default.useRef(null);
+    import_react.default.useEffect(() => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        const xValues = generateAxisValues(heatXVar, heatXVar === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[heatXVar] ?? 0);
+        const yValues = generateAxisValues(heatYVar, heatYVar === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[heatYVar] ?? 0);
+        const newGrid = [];
+        let yi = 0;
+        const processRow = () => {
+          if (yi >= yValues.length) {
+            setGrid(newGrid);
+            setXVals(xValues);
+            setYVals(yValues);
+            return;
+          }
+          const row = [];
+          for (let xi = 0; xi < xValues.length; xi++) {
+            const xVal = xValues[xi], yVal = yValues[yi];
+            const inp = { ...baseInputs };
+            if (heatXVar === "poPremiumPct") {
+              const remBal = Math.max(0, inp.vesselPrice * 1e6 - inp.vesselPrice * 1e6 / inp.amortYrs * inp.effectiveExerciseYear);
+              inp.poPriceMil = remBal * (1 + xVal / 100);
+            } else {
+              inp[heatXVar] = xVal;
+            }
+            if (heatYVar === "poPremiumPct") {
+              const remBal = Math.max(0, inp.vesselPrice * 1e6 - inp.vesselPrice * 1e6 / inp.amortYrs * inp.effectiveExerciseYear);
+              inp.poPriceMil = remBal * (1 + yVal / 100);
+            } else {
+              inp[heatYVar] = yVal;
+            }
+            let res;
+            try {
+              res = computeDealOutputs(inp);
+            } catch (_) {
+              res = { blendedIRR: null, equityIRR: null, jolcoProfit: 0, totalEquityDeployed: 1 };
+            }
+            const moic = res.blendedIRR != null ? (res.totalEquityDeployed + res.jolcoProfit) / res.totalEquityDeployed : null;
+            row.push({ blendedIRR: res.blendedIRR, equityIRR: res.equityIRR, moic, xVal, yVal });
+          }
+          newGrid.push(row);
+          yi++;
+          setTimeout(processRow, 0);
+        };
+        processRow();
+      }, 200);
+      return () => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+      };
+    }, [heatXVar, heatYVar, JSON.stringify(baseInputs)]);
+    const beSpread = import_react.default.useMemo(() => bisectBreakeven(baseInputs, "spreadBps", 0), [JSON.stringify(baseInputs)]);
+    const bePO = import_react.default.useMemo(() => bisectBreakeven(baseInputs, "poPremiumPct", 0), [JSON.stringify(baseInputs)]);
+    const beUST = import_react.default.useMemo(() => bisectBreakeven(baseInputs, "spreadBps", R.treasPostTaxYield / 100), [JSON.stringify(baseInputs), R.treasPostTaxYield]);
+    const taxDep = import_react.default.useMemo(() => {
+      const tot = R.totalStream1 + R.totalStream2 + R.totalStream3;
+      return tot > 0 ? Math.max(0, Math.min(100, R.totalStream2 / tot * 100)) : null;
+    }, [R.totalStream1, R.totalStream2, R.totalStream3]);
+    const C = { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginBottom: 14 };
+    const fmtBE = (val, unit) => {
+      if (val == null) return "\u2014";
+      if (typeof val === "string") return val;
+      return val.toFixed(unit === "bps" ? 0 : 1) + " " + unit;
+    };
+    return /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement("div", { style: { ...C, display: "flex", gap: 16, alignItems: "center" } }, [
+      { label: "X-Axis", val: heatXVar, set: setHeatXVar, color: "#7aa2f7" },
+      { label: "Y-Axis", val: heatYVar, set: setHeatYVar, color: "#bb9af7" }
+    ].map(({ label, val, set, color }) => /* @__PURE__ */ import_react.default.createElement("div", { key: label, style: { flex: 1 } }, /* @__PURE__ */ import_react.default.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color, letterSpacing: "0.05em", marginBottom: 4, fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase" } }, label), /* @__PURE__ */ import_react.default.createElement(
+      "select",
+      {
+        value: val,
+        onChange: (e) => {
+          if (e.target.value !== (label === "X-Axis" ? heatYVar : heatXVar)) set(e.target.value);
+        },
+        style: { width: "100%", padding: "7px 8px", borderRadius: 5, border: "1px solid #3b4261", background: "#1a1b26", color: "#c0caf5", fontSize: 13, fontFamily: "'JetBrains Mono', monospace" }
+      },
+      AXIS_VARS.filter((v) => v.key !== (label === "X-Axis" ? heatYVar : heatXVar)).map((v) => /* @__PURE__ */ import_react.default.createElement("option", { key: v.key, value: v.key }, v.label))
+    ))), !grid && /* @__PURE__ */ import_react.default.createElement("div", { style: { color: "#565f89", fontSize: 11 } }, "Computing\u2026")), /* @__PURE__ */ import_react.default.createElement("div", { style: C }, grid ? /* @__PURE__ */ import_react.default.createElement(
+      HeatmapCanvas,
+      {
+        grid,
+        xLabels: xVals,
+        yLabels: yVals,
+        xVar: heatXVar,
+        yVar: heatYVar,
+        onCellClick
+      }
+    ) : /* @__PURE__ */ import_react.default.createElement("div", { style: { height: 300, display: "flex", alignItems: "center", justifyContent: "center", color: "#565f89" } }, "Computing heatmap\u2026")), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 } }, [
+      { label: "Breakeven Spread", value: fmtBE(beSpread, "bps"), sub: "min spread for IRR > 0%", color: "#7aa2f7" },
+      { label: "Breakeven PO", value: fmtBE(bePO, "%"), sub: "min PO premium for IRR > 0%", color: "#e0af68" },
+      { label: "Match UST at", value: fmtBE(beUST, "bps"), sub: `spread to match ${R.treasPostTaxYield != null ? R.treasPostTaxYield.toFixed(2) : "\u2014"}% post-tax UST`, color: "#9ece6a" },
+      {
+        label: "Tax Dependency",
+        value: taxDep != null ? taxDep.toFixed(1) + "%" : "N/A",
+        sub: taxDep != null && taxDep > 60 ? "\u26A0 >60% of return depends on depreciation losses" : "share of total return from tax shield",
+        color: taxDep != null && taxDep > 60 ? "#e0af68" : "#bb9af7",
+        warn: taxDep != null && taxDep > 60
+      }
+    ].map((card, i) => /* @__PURE__ */ import_react.default.createElement("div", { key: i, style: { ...C, textAlign: "center", border: card.warn ? "1px solid #e0af6880" : "1px solid #292e42", marginBottom: 0 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 } }, card.label), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 22, fontWeight: 700, color: card.color, fontFamily: "'JetBrains Mono', monospace" } }, card.value), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 9, color: card.warn ? "#e0af68" : "#565f89", marginTop: 4, lineHeight: 1.4 } }, card.sub)))));
+  }
+  function ScenariosTab({ scenarios, R, onSave, onDelete, onLoad, nameInput, setNameInput, saving, setSaving }) {
+    const FM = "'JetBrains Mono', monospace";
+    const pct2 = (n) => n != null ? (n * 100).toFixed(2) + "%" : "\u2014";
+    const $m = (n) => n != null ? "$" + (n / 1e6).toFixed(2) + "M" : "\u2014";
+    const bps = (n) => n != null ? (n > 0 ? "+" : "") + (n * 1e4).toFixed(0) + "bps" : "\u2014";
+    const moicFmt = (n) => n != null ? n.toFixed(2) + "\xD7" : "\u2014";
+    const base = scenarios[0];
+    const delta = (val, baseVal, fmt) => {
+      if (val == null || baseVal == null || base == null) return null;
+      const d = val - baseVal;
+      if (Math.abs(d) < 1e-10) return null;
+      return { d, color: d > 0 ? "#9ece6a" : "#f7768e", text: fmt(d) };
+    };
+    const ROWS = [
+      { label: "Equity Deployed", key: "totalEquityDeployed", fmt: $m, deltaFmt: (d) => (d > 0 ? "+" : "") + "$" + (d / 1e6).toFixed(2) + "M" },
+      { label: "Blended IRR", key: "blendedIRR", fmt: pct2, deltaFmt: (d) => (d > 0 ? "+" : "") + (d * 1e4).toFixed(0) + "bps" },
+      { label: "Charter Economics IRR", key: "equityIRR", fmt: pct2, deltaFmt: (d) => (d > 0 ? "+" : "") + (d * 1e4).toFixed(0) + "bps" },
+      { label: "Stream \u2460 Hire Spread", key: "totalStream1", fmt: $m, deltaFmt: (d) => (d > 0 ? "+" : "") + "$" + (d / 1e6).toFixed(2) + "M" },
+      { label: "Stream \u2461 Tax Shield", key: "totalStream2", fmt: $m, deltaFmt: (d) => (d > 0 ? "+" : "") + "$" + (d / 1e6).toFixed(2) + "M" },
+      { label: "Stream \u2462 Residual", key: "totalStream3", fmt: $m, deltaFmt: (d) => (d > 0 ? "+" : "") + "$" + (d / 1e6).toFixed(2) + "M" },
+      { label: "MoIC", key: "moic", fmt: moicFmt, deltaFmt: (d) => (d > 0 ? "+" : "") + d.toFixed(2) + "\xD7" },
+      { label: "vs UST", key: "spread", fmt: bps, deltaFmt: (d) => (d > 0 ? "+" : "") + (d * 1e4).toFixed(0) + "bps" }
+    ];
+    const C = { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginBottom: 14 };
+    if (scenarios.length === 0) {
+      return /* @__PURE__ */ import_react.default.createElement("div", { style: { ...C, textAlign: "center", padding: 40 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { color: "#565f89", fontSize: 14, marginBottom: 12 } }, "No scenarios saved yet."), /* @__PURE__ */ import_react.default.createElement("div", { style: { color: "#a9b1d6", fontSize: 12, marginBottom: 16 } }, "Save your current deal as a scenario to start comparing. Up to 5 scenarios."), !saving ? /* @__PURE__ */ import_react.default.createElement(
+        "button",
+        {
+          onClick: () => setSaving(true),
+          style: { background: "#7aa2f7", color: "#16161e", border: "none", padding: "8px 18px", borderRadius: 6, fontFamily: FM, fontWeight: 700, fontSize: 12, cursor: "pointer" }
+        },
+        "+ Save Current as Scenario"
+      ) : /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "center", alignItems: "center" } }, /* @__PURE__ */ import_react.default.createElement(
+        "input",
+        {
+          autoFocus: true,
+          value: nameInput,
+          onChange: (e) => setNameInput(e.target.value),
+          placeholder: "Scenario name\u2026",
+          style: { padding: "6px 10px", borderRadius: 5, border: "1px solid #7aa2f7", background: "#1a1b26", color: "#c0caf5", fontSize: 13, fontFamily: FM, outline: "none", width: 180 }
+        }
+      ), /* @__PURE__ */ import_react.default.createElement(
+        "button",
+        {
+          onClick: () => {
+            onSave(nameInput || "Scenario " + (scenarios.length + 1));
+            setNameInput("");
+            setSaving(false);
+          },
+          style: { background: "#9ece6a", color: "#16161e", border: "none", padding: "6px 14px", borderRadius: 5, fontFamily: FM, fontWeight: 700, fontSize: 12, cursor: "pointer" }
+        },
+        "Save"
+      ), /* @__PURE__ */ import_react.default.createElement(
+        "button",
+        {
+          onClick: () => {
+            setSaving(false);
+            setNameInput("");
+          },
+          style: { background: "transparent", color: "#a9b1d6", border: "1px solid #3b4261", padding: "6px 10px", borderRadius: 5, fontSize: 12, cursor: "pointer" }
+        },
+        "Cancel"
+      )));
+    }
+    return /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 14 } }, scenarios.length < 5 && !saving && /* @__PURE__ */ import_react.default.createElement(
+      "button",
+      {
+        onClick: () => setSaving(true),
+        style: { background: "#7aa2f7", color: "#16161e", border: "none", padding: "7px 14px", borderRadius: 6, fontFamily: FM, fontWeight: 700, fontSize: 11, cursor: "pointer" }
+      },
+      "+ Save Current as Scenario"
+    ), scenarios.length >= 5 && /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 11, color: "#565f89" } }, "Remove a scenario to add another (max 5)."), saving && /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center" } }, /* @__PURE__ */ import_react.default.createElement(
+      "input",
+      {
+        autoFocus: true,
+        value: nameInput,
+        onChange: (e) => setNameInput(e.target.value),
+        placeholder: "Scenario name\u2026",
+        style: { padding: "5px 9px", borderRadius: 5, border: "1px solid #7aa2f7", background: "#1a1b26", color: "#c0caf5", fontSize: 12, fontFamily: FM, outline: "none", width: 160 }
+      }
+    ), /* @__PURE__ */ import_react.default.createElement(
+      "button",
+      {
+        onClick: () => {
+          onSave(nameInput || "Scenario " + (scenarios.length + 1));
+          setNameInput("");
+          setSaving(false);
+        },
+        style: { background: "#9ece6a", color: "#16161e", border: "none", padding: "5px 12px", borderRadius: 5, fontFamily: FM, fontWeight: 700, fontSize: 11, cursor: "pointer" }
+      },
+      "Save"
+    ), /* @__PURE__ */ import_react.default.createElement(
+      "button",
+      {
+        onClick: () => {
+          setSaving(false);
+          setNameInput("");
+        },
+        style: { background: "transparent", color: "#a9b1d6", border: "1px solid #3b4261", padding: "5px 9px", borderRadius: 5, fontSize: 11, cursor: "pointer" }
+      },
+      "Cancel"
+    ))), /* @__PURE__ */ import_react.default.createElement("div", { style: { overflowX: "auto" } }, /* @__PURE__ */ import_react.default.createElement("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: FM } }, /* @__PURE__ */ import_react.default.createElement("thead", null, /* @__PURE__ */ import_react.default.createElement("tr", { style: { borderBottom: "1px solid #3b4261" } }, /* @__PURE__ */ import_react.default.createElement("th", { style: { textAlign: "left", padding: "8px 12px", color: "#7aa2f7", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", minWidth: 160 } }, "Metric"), scenarios.map((sc, i) => /* @__PURE__ */ import_react.default.createElement("th", { key: i, style: { textAlign: "right", padding: "8px 12px", minWidth: 120 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { color: i === 0 ? "#9ece6a" : "#c0caf5", fontWeight: 700, fontSize: 11 } }, i === 0 ? "\u2605 " : "", sc.name), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 3 } }, /* @__PURE__ */ import_react.default.createElement(
+      "button",
+      {
+        onClick: () => onLoad(sc),
+        style: { fontSize: 9, padding: "2px 6px", borderRadius: 3, border: "1px solid #3b4261", background: "transparent", color: "#7aa2f7", cursor: "pointer" }
+      },
+      "Load \u2192"
+    ), /* @__PURE__ */ import_react.default.createElement(
+      "button",
+      {
+        onClick: () => onDelete(i),
+        style: { fontSize: 9, padding: "2px 5px", borderRadius: 3, border: "1px solid #3b4261", background: "transparent", color: "#f7768e", cursor: "pointer" }
+      },
+      "\u2715"
+    )))))), /* @__PURE__ */ import_react.default.createElement("tbody", null, ROWS.map((row, ri) => /* @__PURE__ */ import_react.default.createElement("tr", { key: ri, style: { borderBottom: "1px solid #292e42", background: ri % 2 === 0 ? "transparent" : "#1e2030" } }, /* @__PURE__ */ import_react.default.createElement("td", { style: { padding: "6px 12px", color: "#a9b1d6", fontSize: 11 } }, row.label), scenarios.map((sc, si) => {
+      const val = row.key === "moic" ? sc.outputs.totalEquityDeployed > 0 ? (sc.outputs.totalEquityDeployed + sc.outputs.jolcoProfit) / sc.outputs.totalEquityDeployed : null : sc.outputs[row.key];
+      const baseVal = row.key === "moic" ? base?.outputs.totalEquityDeployed > 0 ? (base.outputs.totalEquityDeployed + base.outputs.jolcoProfit) / base.outputs.totalEquityDeployed : null : base?.outputs[row.key];
+      const d = si > 0 ? delta(val, baseVal, row.deltaFmt) : null;
+      return /* @__PURE__ */ import_react.default.createElement("td", { key: si, style: { textAlign: "right", padding: "6px 12px", color: "#c0caf5" } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { fontWeight: si === 0 ? 700 : 400 } }, row.fmt(val)), d && /* @__PURE__ */ import_react.default.createElement("span", { style: { color: d.color, fontSize: 10, marginLeft: 5 } }, d.text));
+    })))))));
+  }
+  function TornadoChart({ data, baseIRR }) {
+    const canvasRef = import_react.default.useRef(null);
+    const containerRef = import_react.default.useRef(null);
+    const [width, setWidth] = import_react.default.useState(700);
+    import_react.default.useEffect(() => {
+      if (containerRef.current) setWidth(containerRef.current.offsetWidth);
+    }, []);
+    import_react.default.useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas || !data || data.length === 0) return;
+      const ctx = canvas.getContext("2d");
+      const W = canvas.width, H = canvas.height;
+      const padL = 120, padR = 60, padT = 20, padB = 20;
+      const chartW = W - padL - padR;
+      const rowH = (H - padT - padB) / data.length;
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = "#16161e";
+      ctx.fillRect(0, 0, W, H);
+      const allIRRs = data.flatMap((d) => [d.lo, d.hi, baseIRR]).filter((v) => v != null);
+      if (allIRRs.length === 0) return;
+      const xMin = Math.min(...allIRRs) - 0.01;
+      const xMax = Math.max(...allIRRs) + 0.01;
+      const xScale = (irr) => padL + (irr - xMin) / (xMax - xMin) * chartW;
+      const baseX = xScale(baseIRR ?? 0);
+      ctx.strokeStyle = "#7aa2f7";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(baseX, padT);
+      ctx.lineTo(baseX, H - padB);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      data.forEach((d, i) => {
+        const cy = padT + i * rowH + rowH / 2;
+        const barH = Math.max(4, rowH * 0.55);
+        ctx.fillStyle = "#a9b1d6";
+        ctx.font = "11px 'Inter', sans-serif";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        ctx.fillText(d.label, padL - 6, cy);
+        if (d.lo == null || d.hi == null) return;
+        const loX = xScale(d.lo), hiX = xScale(d.hi);
+        ctx.fillStyle = "#f7768e";
+        ctx.fillRect(Math.min(loX, baseX), cy - barH / 2, Math.abs(baseX - Math.min(loX, baseX)), barH);
+        ctx.fillStyle = "#9ece6a";
+        ctx.fillRect(baseX, cy - barH / 2, Math.abs(hiX - baseX), barH);
+        ctx.fillStyle = "#c0caf5";
+        ctx.font = "9px 'JetBrains Mono', monospace";
+        ctx.textAlign = "right";
+        ctx.fillText((d.lo * 100).toFixed(1) + "%", loX - 3, cy);
+        ctx.textAlign = "left";
+        ctx.fillText((d.hi * 100).toFixed(1) + "%", hiX + 3, cy);
+      });
+      ctx.fillStyle = "#565f89";
+      ctx.font = "9px 'JetBrains Mono', monospace";
+      ctx.textAlign = "center";
+      for (let v = Math.ceil(xMin * 100); v <= Math.floor(xMax * 100); v += 2) {
+        const x = xScale(v / 100);
+        if (x < padL || x > W - padR) continue;
+        ctx.fillText(v + "%", x, H - 5);
+      }
+    }, [data, baseIRR, width]);
+    return /* @__PURE__ */ import_react.default.createElement("div", { ref: containerRef, style: { width: "100%" } }, /* @__PURE__ */ import_react.default.createElement(
+      "canvas",
+      {
+        ref: canvasRef,
+        width,
+        height: Math.max(220, (data || []).length * 28 + 40),
+        style: { width: "100%", height: "auto", display: "block" }
+      }
+    ));
+  }
+  function CumulativeCFChart({ equityCF, equityCF_noTax }) {
+    const canvasRef = import_react.default.useRef(null);
+    const containerRef = import_react.default.useRef(null);
+    const [width, setWidth] = import_react.default.useState(700);
+    import_react.default.useEffect(() => {
+      if (containerRef.current) setWidth(containerRef.current.offsetWidth);
+    }, []);
+    import_react.default.useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas || !equityCF || equityCF.length === 0) return;
+      const ctx = canvas.getContext("2d");
+      const W = canvas.width, H = canvas.height;
+      const padL = 52, padR = 20, padT = 16, padB = 28;
+      const chartW = W - padL - padR;
+      const chartH = H - padT - padB;
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = "#16161e";
+      ctx.fillRect(0, 0, W, H);
+      const cumWith = [], cumWithout = [];
+      let sw = 0, swo = 0;
+      for (let t = 0; t < equityCF.length; t++) {
+        sw += equityCF[t];
+        cumWith.push(sw / 1e6);
+        swo += equityCF_noTax[t];
+        cumWithout.push(swo / 1e6);
+      }
+      const allVals = [...cumWith, ...cumWithout];
+      const yMin = Math.min(...allVals, 0) * 1.05;
+      const yMax = Math.max(...allVals, 0) * 1.05;
+      const xScale = (t) => padL + t / (equityCF.length - 1) * chartW;
+      const yScale = (v) => padT + chartH - (v - yMin) / (yMax - yMin) * chartH;
+      const y0 = yScale(0);
+      ctx.strokeStyle = "#3b4261";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(padL, y0);
+      ctx.lineTo(W - padR, y0);
+      ctx.stroke();
+      let paybackYear = null;
+      for (let t = 1; t < cumWith.length; t++) {
+        if (cumWith[t - 1] < 0 && cumWith[t] >= 0) {
+          paybackYear = t;
+          break;
+        }
+      }
+      if (paybackYear != null) {
+        const px = xScale(paybackYear);
+        ctx.strokeStyle = "#565f89";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(px, padT);
+        ctx.lineTo(px, H - padB);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#a9b1d6";
+        ctx.font = "9px 'Inter', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("Yr " + paybackYear + " payback", px, padT - 3);
+      }
+      [[cumWith, "#bb9af7"], [cumWithout, "#e0af68"]].forEach(([series, color]) => {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        series.forEach((v, t) => {
+          const x = xScale(t), y = yScale(v);
+          t === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      });
+      ctx.fillStyle = "#565f89";
+      ctx.font = "9px 'JetBrains Mono', monospace";
+      ctx.textAlign = "center";
+      for (let t = 0; t < equityCF.length; t++) {
+        ctx.fillText("Yr" + t, xScale(t), H - 5);
+      }
+      ctx.textAlign = "right";
+      const yStep = (yMax - yMin) / 4;
+      for (let i = 0; i <= 4; i++) {
+        const v = yMin + i * yStep;
+        ctx.fillStyle = "#565f89";
+        ctx.fillText(v.toFixed(1) + "M", padL - 4, yScale(v) + 3);
+      }
+      ctx.font = "10px 'Inter', sans-serif";
+      ctx.textAlign = "left";
+      [["#bb9af7", "With Tax Shield"], ["#e0af68", "Without Tax Shield"]].forEach(([color, label], i) => {
+        ctx.fillStyle = color;
+        ctx.fillRect(padL + i * 140, padT - 1, 12, 8);
+        ctx.fillStyle = "#a9b1d6";
+        ctx.fillText(label, padL + i * 140 + 16, padT + 7);
+      });
+    }, [equityCF, equityCF_noTax, width]);
+    return /* @__PURE__ */ import_react.default.createElement("div", { ref: containerRef, style: { width: "100%" } }, /* @__PURE__ */ import_react.default.createElement(
+      "canvas",
+      {
+        ref: canvasRef,
+        width,
+        height: 220,
+        style: { width: "100%", height: "auto", display: "block" }
+      }
+    ));
   }
   function JOLCOv3() {
     const [tab, setTab] = (0, import_react.useState)("deal");
@@ -21604,6 +22406,12 @@
     const [foreignInterestTaxPct, setForeignInterestTaxPct] = (0, import_react.useState)(27);
     const [specialDeprPct, setSpecialDeprPct] = (0, import_react.useState)(30);
     const [treasuryYield, setTreasuryYield] = (0, import_react.useState)(4.25);
+    const [poMode, setPoMode] = (0, import_react.useState)("absolute");
+    const [heatXVar, setHeatXVar] = (0, import_react.useState)("spreadBps");
+    const [heatYVar, setHeatYVar] = (0, import_react.useState)("poPremiumPct");
+    const [scenarios, setScenarios] = (0, import_react.useState)([]);
+    const [scenarioNameInput, setScenarioNameInput] = (0, import_react.useState)("");
+    const [savingScenario, setSavingScenario] = (0, import_react.useState)(false);
     const vType = VESSEL_DB.find((v) => v.id === vesselTypeId);
     const flagInfo = FLAG_OPTIONS.find((f) => f.id === flagId);
     const isJPFlag = flagId === "jp";
@@ -21612,116 +22420,66 @@
     const usefulLife = isSecondHand ? computeUsedAssetLife(newbuildingLife, vesselAgeYrs) : newbuildingLife;
     const dbRate = 2 / usefulLife;
     const R = (0, import_react.useMemo)(() => {
-      const VP = vesselPrice * 1e6;
-      const debt = VP * debtPct / 100;
-      const equity = VP - debt;
-      const annualPrincipal = VP / amortYrs;
-      const monthlyFixed = annualPrincipal / 12;
-      const bankAllInRate = (jpyBaseRate + bankSpreadBps / 100) / 100 + swapCostBps / 1e4;
-      const equityAllInRate = (sofrRate + spreadBps / 100) / 100;
       const poEntry = poSchedule.find((p) => p.yr === effectiveExerciseYear);
       const poPriceMil = poEntry ? poEntry.price * 1e6 : 0;
-      const saleCommCost = VP * saleCommission / 100;
-      const depreciableBase = VP + saleCommCost;
-      const depr = computeDepr(depreciableBase, usefulLife, specialDeprPct);
-      const equityCF = [-(equity + saleCommCost)];
-      const equityCF_noTax = [-(equity + saleCommCost)];
-      const years = [];
-      let outstandingTotal = VP;
-      let outstandingDebt = debt;
-      let outstandingEquity = equity;
-      let cumulativeEquityCF = -(equity + saleCommCost);
-      let totalStream1 = 0, totalStream2 = 0, totalStream3 = 0, totalBbcComm = 0;
-      for (let yr = 1; yr <= effectiveExerciseYear; yr++) {
-        const fixedHire = Math.min(annualPrincipal, outstandingTotal);
-        const variableHire = outstandingTotal * equityAllInRate;
-        const variableHireEquity = variableHire;
-        const variableHireBank = 0;
-        const totalHire = fixedHire + variableHire;
-        const bbcCommCost = totalHire * bbcCommission / 100;
-        const netHire = totalHire - bbcCommCost;
-        const bankPrincipal = Math.min(annualPrincipal * (debtPct / 100), outstandingDebt);
-        const bankInterest = outstandingDebt * bankAllInRate;
-        const totalToBank = bankPrincipal + bankInterest;
-        const equityPrincipalReturn = Math.min(annualPrincipal * ((100 - debtPct) / 100), outstandingEquity);
-        const netHireToEquity = netHire - bankPrincipal - bankInterest;
-        const hireSpread = netHireToEquity - equityPrincipalReturn;
-        const equityInterestIncome = hireSpread;
-        const dep = yr <= depr.length ? depr[yr - 1] : { total: 0, bv: 0 };
-        const spcTaxablePL = netHire - dep.total - bankInterest;
-        const taxShieldThisYear = -spcTaxablePL * (taxRate / 100);
-        const isExitYear = yr === effectiveExerciseYear;
-        let residualToEquity = 0, capGainTax = 0;
-        if (isExitYear) {
-          const remainDebt = outstandingDebt - bankPrincipal;
-          const grossResidual = poPriceMil - remainDebt;
-          const bookVal = dep.bv;
-          const capGain = Math.max(0, poPriceMil - bookVal);
-          capGainTax = capGain * capGainsTaxRate / 100;
-          residualToEquity = grossResidual - capGainTax;
-        }
-        const netCF = equityPrincipalReturn + hireSpread + taxShieldThisYear + (isExitYear ? residualToEquity : 0);
-        const netCF_noTax = equityPrincipalReturn + hireSpread + (isExitYear ? residualToEquity : 0);
-        outstandingTotal = Math.max(0, outstandingTotal - annualPrincipal);
-        outstandingDebt = Math.max(0, outstandingDebt - bankPrincipal);
-        outstandingEquity = Math.max(0, outstandingEquity - equityPrincipalReturn);
-        cumulativeEquityCF += netCF;
-        totalStream1 += hireSpread;
-        totalStream2 += taxShieldThisYear;
-        totalBbcComm += bbcCommCost;
-        if (isExitYear) totalStream3 = residualToEquity;
-        equityCF.push(netCF);
-        equityCF_noTax.push(netCF_noTax);
-        years.push({
-          yr,
-          fixedHire,
-          variableHireBank,
-          variableHireEquity,
-          variableHire,
-          totalHire,
-          bbcCommCost,
-          netHire,
-          bankPrincipal,
-          bankInterest,
-          totalToBank,
-          equityPrincipalReturn,
-          equityInterestIncome,
-          hireSpread,
-          dep: dep.total,
-          spcTaxablePL,
-          taxShieldThisYear,
-          residualGain: isExitYear ? residualToEquity : 0,
-          poExercise: isExitYear ? poPriceMil : 0,
-          capGainTax,
-          netCF,
-          netCF_noTax,
-          cumulativeEquityCF,
-          outstandingDebt,
-          outstandingEquity,
-          outstandingTotal,
-          bookVal: dep.bv
-        });
-      }
-      const blendedIRR = solveIRR(equityCF);
-      const equityIRR = solveIRR(equityCF_noTax);
-      const totalEquityDeployed = equity + saleCommCost;
-      const treasPostTaxYield = treasuryYield * (1 - foreignInterestTaxPct / 100);
-      const treasTerminal = totalEquityDeployed * Math.pow(1 + treasPostTaxYield / 100, effectiveExerciseYear);
-      const treasProfit = treasTerminal - totalEquityDeployed;
-      const jolcoProfit = equityCF.reduce((a, b) => a + b, 0);
-      const spread = blendedIRR != null ? blendedIRR - treasPostTaxYield / 100 : null;
-      return { VP, debt, equity, saleCommCost, totalBbcComm, totalEquityDeployed, equityCF, equityCF_noTax, years, depr, blendedIRR, equityIRR, treasTerminal, treasProfit, jolcoProfit, spread, totalStream1, totalStream2, totalStream3, monthlyFixed, bankAllInRate, equityAllInRate, poPriceMil, treasPostTaxYield };
-    }, [vesselPrice, debtPct, amortYrs, sofrRate, spreadBps, jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission, taxRate, capGainsTaxRate, foreignInterestTaxPct, usefulLife, specialDeprPct, treasuryYield, flagId, effectiveExerciseYear, poSchedule, vesselAgeYrs]);
+      return computeDealOutputs({
+        vesselPrice,
+        debtPct,
+        amortYrs,
+        sofrRate,
+        spreadBps,
+        jpyBaseRate,
+        bankSpreadBps,
+        swapCostBps,
+        saleCommission,
+        bbcCommission,
+        taxRate,
+        capGainsTaxRate,
+        foreignInterestTaxPct,
+        usefulLife,
+        specialDeprPct,
+        treasuryYield,
+        effectiveExerciseYear,
+        poPriceMil
+      });
+    }, [
+      vesselPrice,
+      debtPct,
+      amortYrs,
+      sofrRate,
+      spreadBps,
+      jpyBaseRate,
+      bankSpreadBps,
+      swapCostBps,
+      saleCommission,
+      bbcCommission,
+      taxRate,
+      capGainsTaxRate,
+      foreignInterestTaxPct,
+      usefulLife,
+      specialDeprPct,
+      treasuryYield,
+      flagId,
+      effectiveExerciseYear,
+      poSchedule,
+      vesselAgeYrs
+    ]);
+    const years = (0, import_react.useMemo)(() => R.years.map((y) => ({
+      ...y,
+      variableHire: y.variableHire ?? 0,
+      variableHireEquity: y.variableHire ?? 0,
+      variableHireBank: 0,
+      totalToBank: (y.bankPrincipal ?? 0) + (y.bankInterest ?? 0),
+      equityInterestIncome: y.hireSpread
+    })), [R.years]);
     const C = { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginBottom: 14 };
     const H = (color, text) => /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color } }, "\u25CF"), text);
     const T = (t, label) => /* @__PURE__ */ import_react.default.createElement("button", { onClick: () => setTab(t), style: { padding: "9px 16px", fontSize: 12, fontFamily: F, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", background: tab === t ? "#1a1b26" : "transparent", color: tab === t ? "#7aa2f7" : "#6b7299", border: "none", borderBottom: tab === t ? "2px solid #7aa2f7" : "2px solid transparent", cursor: "pointer" } }, label);
-    return /* @__PURE__ */ import_react.default.createElement("div", { style: { minHeight: "100vh", background: "#16161e", fontFamily: "'Inter', sans-serif", color: "#a9b1d6" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { background: "linear-gradient(135deg, #1a1b26, #24283b)", borderBottom: "1px solid #292e42", padding: "20px 28px" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } }, /* @__PURE__ */ import_react.default.createElement("img", { src: "updated bg image.png", alt: "JOLCO", style: { height: 48, width: "auto", objectFit: "contain" } }), /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 19, fontWeight: 700, color: "#c0caf5", fontFamily: F } }, "IRR Calculator ", /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 12, color: "#9ece6a" } }, "v3")), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, color: "#a9b1d6" } }, "Financed ~", debtPct, "% by bank debt, ~", 100 - debtPct, "% by Japanese TK (silent partnership) equity investors \xB7 MOF Depreciation \xB7 Tax Shield Analysis"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { textAlign: "right" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "#ffffff" } }, "Created By Sriniwas Ghate"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#ffffff" } }, "Gibson Shipbrokers, Singapore")))), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", background: "#24283b", borderBottom: "1px solid #292e42", padding: "0 20px", flexWrap: "wrap" } }, T("deal", "Deal Inputs"), T("depr", "Depreciation Scale"), T("cf", "Equity Cashflows"), T("vs", "vs Treasury")), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "20px 28px", maxWidth: 1150, margin: "0 auto" } }, tab === "deal" && /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { gridColumn: "1 / -1", ...C, background: "linear-gradient(135deg, #1a1b26, #1e2030)" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" } }, "\u2460 Hire Spread (net debt service & BBC)"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: "#9ece6a", fontFamily: F } }, "$", $d(R.totalStream1 / 1e6, 2), "M"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6" } }, "Hire spread after debt service & ", bbcCommission, "% BBC brokerage"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, fontSize: 9, fontWeight: 700, color: "#9ece6a44", background: "rgba(158,206,106,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" } }, "CASH YIELD \xB7 pre-tax \xB7 from charter hire")), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" } }, "\u2461 Tax Shield (Net)"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: "#bb9af7", fontFamily: F } }, "$", $d(R.totalStream2 / 1e6, 2), "M"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6" } }, "Tax saved from depreciation losses"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, fontSize: 9, fontWeight: 700, color: "#bb9af744", background: "rgba(187,154,247,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" } }, "TAX ARBITRAGE \xB7 depends on investor tax capacity")), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" } }, "\u2462 Residual / PO Play"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: "#e0af68", fontFamily: F } }, "$", $d(R.totalStream3 / 1e6, 2), "M"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6" } }, "PO exercise net of debt & cap gains tax"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, fontSize: 9, fontWeight: 700, color: "#e0af6844", background: "rgba(224,175,104,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" } }, "TERMINAL EVENT \xB7 PO exercise at exit"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 } }, [
+    return /* @__PURE__ */ import_react.default.createElement("div", { style: { minHeight: "100vh", background: "#16161e", fontFamily: "'Inter', sans-serif", color: "#a9b1d6" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { background: "linear-gradient(135deg, #1a1b26, #24283b)", borderBottom: "1px solid #292e42", padding: "20px 28px" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } }, /* @__PURE__ */ import_react.default.createElement("img", { src: "updated bg image.png", alt: "JOLCO", style: { height: 48, width: "auto", objectFit: "contain" } }), /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 19, fontWeight: 700, color: "#c0caf5", fontFamily: F } }, "IRR Calculator ", /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 12, color: "#9ece6a" } }, "v4")), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, color: "#a9b1d6" } }, "Financed ~", debtPct, "% by bank debt, ~", 100 - debtPct, "% by Japanese TK (silent partnership) equity investors \xB7 MOF Depreciation \xB7 Tax Shield Analysis"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { textAlign: "right" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "#ffffff" } }, "Created By Sriniwas Ghate"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#ffffff" } }, "Gibson Shipbrokers, Singapore")))), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", background: "#24283b", borderBottom: "1px solid #292e42", padding: "0 20px", flexWrap: "wrap" } }, T("deal", "Deal Inputs"), T("sensitivity", "Sensitivity"), T("scenarios", "Scenarios"), T("depr", "Depreciation Scale"), T("cf", "Equity Cashflows"), T("vs", "vs Treasury")), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "20px 28px", maxWidth: 1150, margin: "0 auto" } }, tab === "deal" && /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { gridColumn: "1 / -1", ...C, background: "linear-gradient(135deg, #1a1b26, #1e2030)" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" } }, "\u2460 Equity return embedded in charter hire, net of brokerage, allocated to TK investors"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: "#9ece6a", fontFamily: F } }, "$", $d(R.totalStream1 / 1e6, 2), "M"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6" } }, "Hire spread after debt service & ", bbcCommission, "% BBC brokerage"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, fontSize: 9, fontWeight: 700, color: "#9ece6a44", background: "rgba(158,206,106,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" } }, "Cash yield from charter operations (pre-tax)")), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" } }, "\u2461 Tax Shield (Net)"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: "#bb9af7", fontFamily: F } }, "$", $d(R.totalStream2 / 1e6, 2), "M"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6" } }, "Tax saved from depreciation losses"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, fontSize: 9, fontWeight: 700, color: "#bb9af744", background: "rgba(187,154,247,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" } }, "Tax arbitrage \u2014 depends on investor's taxable income capacity")), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" } }, "\u2462 Residual / PO Play"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: "#e0af68", fontFamily: F } }, "$", $d(R.totalStream3 / 1e6, 2), "M"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6" } }, "PO exercise net of debt & cap gains tax"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, fontSize: 9, fontWeight: 700, color: "#e0af6844", background: "rgba(224,175,104,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" } }, "Terminal event \u2014 PO exercise at lease end"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 } }, [
       { l: "Equity Deployed", v: `$${$d(R.totalEquityDeployed / 1e6, 1)}M`, c: "#7aa2f7" },
       { l: "Total Profit", v: `$${$d(R.jolcoProfit / 1e6, 2)}M`, c: R.jolcoProfit >= 0 ? "#9ece6a" : "#f7768e" },
-      { l: "Equity IRR", v: pct(R.equityIRR), c: "#e0af68", sub: "hire + residual" },
-      { l: "Blended IRR", v: pct(R.blendedIRR), c: R.spread > 0 ? "#9ece6a" : "#f7768e", sub: "incl. tax shield" },
       { l: "vs UST", v: R.spread != null ? (R.spread > 0 ? "+" : "") + (R.spread * 1e4).toFixed(0) + "bps" : "\u2014", c: R.spread > 0 ? "#9ece6a" : "#f7768e" }
-    ].map((x, i) => /* @__PURE__ */ import_react.default.createElement("div", { key: i, style: { textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase" } }, x.l), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 19, fontWeight: 700, color: x.c, fontFamily: F } }, x.v))))), /* @__PURE__ */ import_react.default.createElement("div", { style: C }, H("#9ece6a", "Vessel & Structure"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginBottom: 12 } }, /* @__PURE__ */ import_react.default.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" } }, "Vessel Type"), /* @__PURE__ */ import_react.default.createElement("select", { value: vesselTypeId, onChange: (e) => setVesselTypeId(e.target.value), style: { width: "100%", padding: "7px 8px", borderRadius: 5, border: "1px solid #3b4261", background: "#1a1b26", color: "#c0caf5", fontSize: 13, fontFamily: F } }, VESSEL_DB.map((v) => /* @__PURE__ */ import_react.default.createElement("option", { key: v.id, value: v.id }, v.label, " (JP:", v.jpLife, "yr / For:", v.forLife, "yr)")))), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginBottom: 12 } }, /* @__PURE__ */ import_react.default.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" } }, "Flag State (SPC Registration)"), /* @__PURE__ */ import_react.default.createElement("select", { value: flagId, onChange: (e) => setFlagId(e.target.value), style: { width: "100%", padding: "7px 8px", borderRadius: 5, border: "1px solid #3b4261", background: "#1a1b26", color: "#c0caf5", fontSize: 13, fontFamily: F } }, FLAG_OPTIONS.map((f) => /* @__PURE__ */ import_react.default.createElement("option", { key: f.id, value: f.id }, f.label))), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", marginTop: 2 } }, flagInfo.desc, " \xB7 Special depr: ", flagInfo.specialMin, "\u2013", flagInfo.specialMax, "%")), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginBottom: 12 } }, /* @__PURE__ */ import_react.default.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" } }, "Vessel Age at Delivery"), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } }, /* @__PURE__ */ import_react.default.createElement(
+    ].map((x, i) => /* @__PURE__ */ import_react.default.createElement("div", { key: i, style: { textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase" } }, x.l), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 19, fontWeight: 700, color: x.c, fontFamily: F } }, x.v)))), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10, padding: "10px 14px", background: "#16161e", borderRadius: 8, border: "1px solid #292e42" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" } }, "Charter Economics"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#565f89", marginBottom: 2 } }, "Streams \u2460+\u2462 only (pre-tax)"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 26, fontWeight: 700, color: "#e0af68", fontFamily: F } }, pct(R.equityIRR)), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#565f89", marginTop: 2 } }, "Hire + residual, no tax shield")), /* @__PURE__ */ import_react.default.createElement("div", { style: { textAlign: "center", borderLeft: "1px solid #292e42" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" } }, "Including Tax Shield"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#565f89", marginBottom: 2 } }, "All three streams"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 26, fontWeight: 700, color: R.blendedIRR != null && R.blendedIRR > 0 ? "#9ece6a" : "#f7768e", fontFamily: F } }, pct(R.blendedIRR)), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#565f89", marginTop: 2 } }, "Blended IRR \u2014 full deal return"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#565f89", fontStyle: "italic", textAlign: "center", marginTop: 6 } }, "Assumes investor has sufficient other taxable income to absorb full depreciation losses each year. If tax capacity is limited, actual returns will be lower.")), /* @__PURE__ */ import_react.default.createElement("div", { style: C }, H("#9ece6a", "Vessel & Structure"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginBottom: 12 } }, /* @__PURE__ */ import_react.default.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" } }, "Vessel Type"), /* @__PURE__ */ import_react.default.createElement("select", { value: vesselTypeId, onChange: (e) => setVesselTypeId(e.target.value), style: { width: "100%", padding: "7px 8px", borderRadius: 5, border: "1px solid #3b4261", background: "#1a1b26", color: "#c0caf5", fontSize: 13, fontFamily: F } }, VESSEL_DB.map((v) => /* @__PURE__ */ import_react.default.createElement("option", { key: v.id, value: v.id }, v.label, " (JP:", v.jpLife, "yr / For:", v.forLife, "yr)")))), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginBottom: 12 } }, /* @__PURE__ */ import_react.default.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" } }, "Flag State (SPC Registration)"), /* @__PURE__ */ import_react.default.createElement("select", { value: flagId, onChange: (e) => setFlagId(e.target.value), style: { width: "100%", padding: "7px 8px", borderRadius: 5, border: "1px solid #3b4261", background: "#1a1b26", color: "#c0caf5", fontSize: 13, fontFamily: F } }, FLAG_OPTIONS.map((f) => /* @__PURE__ */ import_react.default.createElement("option", { key: f.id, value: f.id }, f.label))), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", marginTop: 2 } }, flagInfo.desc, " \xB7 Special depr: ", flagInfo.specialMin, "\u2013", flagInfo.specialMax, "%")), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginBottom: 12 } }, /* @__PURE__ */ import_react.default.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" } }, "Vessel Age at Delivery"), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } }, /* @__PURE__ */ import_react.default.createElement(
       "input",
       {
         type: "number",
@@ -21754,7 +22512,71 @@
     }, unit: "", min: 1, max: poLastYear }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "Last Year (Oblig.)", value: poLastYear, onChange: (v) => {
       setPoLastYear(v);
       if (exerciseYear > v) setExerciseYear(v);
-    }, unit: "", min: poFirstYear, max: 25 })), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "5px 8px", borderRadius: 4, background: "rgba(187,154,247,0.08)", border: "1px solid #bb9af744", fontSize: 10, color: "#bb9af7", lineHeight: 1.5, marginBottom: 10 } }, "Lock-in period: ", /* @__PURE__ */ import_react.default.createElement("strong", null, lockInPeriod, " yr", lockInPeriod !== 1 ? "s" : ""), " (= First PO Year \u2212 1). BBC cannot exercise before Yr ", poFirstYear, "."), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginBottom: 10 } }, /* @__PURE__ */ import_react.default.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" } }, "Exercise at Year"), /* @__PURE__ */ import_react.default.createElement("select", { value: exerciseYear, onChange: (e) => setExerciseYear(parseInt(e.target.value)), style: { width: "100%", padding: "7px 8px", borderRadius: 5, border: `1px solid ${effectiveExerciseYear > amortYrs ? "#f7768e" : "#7aa2f7"}`, background: "#1a1b26", color: "#c0caf5", fontSize: 13, fontFamily: F } }, poSchedule.map((p) => /* @__PURE__ */ import_react.default.createElement("option", { key: p.yr, value: p.yr }, "Year ", p.yr, " \u2014 $", $d(p.price, 1), "M ", p.obligatory ? "(Obligation)" : ""))), effectiveExerciseYear > amortYrs && /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, padding: "6px 8px", borderRadius: 4, background: "rgba(247,118,142,0.1)", border: "1px solid #f7768e44", fontSize: 10, color: "#f7768e", lineHeight: 1.5 } }, "\u26A0 Exercise year (", effectiveExerciseYear, ") exceeds amortization period (", amortYrs, " yrs). After year ", amortYrs, " all balances are zero \u2014 hire, interest, and residual will be zero. Extend the amortization period or reduce the exercise year.")), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "PO Premium", value: poPremium, onChange: setPoPremium, unit: "$M", step: 0.1, help: `Flat margin added above financing balance at every year. PO(N) = max(0, VP - VP/${amortYrs} x N) + premium. Net benefit after ${capGainsTaxRate}% disposal gain tax \u2248 premium x ${$d(1 - capGainsTaxRate / 100, 4)}.` }), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 8, borderRadius: 5, background: "#1e2030", marginBottom: 10, fontSize: 10, color: "#a9b1d6", lineHeight: 1.5 } }, /* @__PURE__ */ import_react.default.createElement("strong", { style: { color: "#bb9af7" } }, "PO(N)"), " = max(0, ", $d(vesselPrice, 1), " \u2212 ", $d(effectiveDecline, 3), "\xD7N)", poPremium !== 0 ? ` + ${$d(poPremium, 2)}` : "", ". Disposal gain tax = max(0, PO\u2212BV) \xD7 ", $d(capGainsTaxRate, 3), "%. Override any row below."), lockInPeriod > 0 && Array.from({ length: lockInPeriod }, (_, i) => i + 1).map((yr) => /* @__PURE__ */ import_react.default.createElement("div", { key: yr, style: { display: "flex", alignItems: "center", gap: 5, marginBottom: 2, padding: "3px 4px", borderRadius: 4, opacity: 0.45 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 11, color: "#f7768e", fontFamily: F, width: 32 } }, "Yr", yr), /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 10, color: "#f7768e", fontStyle: "italic" } }, "locked \u2014 no exercise"), /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 8, color: "#f7768e", marginLeft: "auto", fontFamily: F } }, "LOCK"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 9, color: "#a9b1d6", display: "flex", gap: 4, marginBottom: 4, fontFamily: F } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { width: 32 } }, "YEAR"), /* @__PURE__ */ import_react.default.createElement("span", { style: { width: 76 } }, "PO PRICE"), /* @__PURE__ */ import_react.default.createElement("span", { style: { flex: 1 } }, "STATUS")), poSchedule.map((p, i) => /* @__PURE__ */ import_react.default.createElement("div", { key: i, style: { display: "flex", alignItems: "center", gap: 5, marginBottom: 2, padding: "3px 4px", borderRadius: 4, background: p.yr === effectiveExerciseYear ? "rgba(122,162,247,0.08)" : "transparent" } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 11, color: p.yr === effectiveExerciseYear ? "#7aa2f7" : "#a9b1d6", fontFamily: F, width: 32, fontWeight: p.yr === effectiveExerciseYear ? 700 : 400 } }, "Yr", p.yr), /* @__PURE__ */ import_react.default.createElement(
+    }, unit: "", min: poFirstYear, max: 25 })), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "5px 8px", borderRadius: 4, background: "rgba(187,154,247,0.08)", border: "1px solid #bb9af744", fontSize: 10, color: "#bb9af7", lineHeight: 1.5, marginBottom: 10 } }, "Lock-in period: ", /* @__PURE__ */ import_react.default.createElement("strong", null, lockInPeriod, " yr", lockInPeriod !== 1 ? "s" : ""), " (= First PO Year \u2212 1). BBC cannot exercise before Yr ", poFirstYear, "."), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginBottom: 10 } }, /* @__PURE__ */ import_react.default.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", marginBottom: 3, fontFamily: F, textTransform: "uppercase" } }, "Exercise at Year"), /* @__PURE__ */ import_react.default.createElement("select", { value: exerciseYear, onChange: (e) => setExerciseYear(parseInt(e.target.value)), style: { width: "100%", padding: "7px 8px", borderRadius: 5, border: `1px solid ${effectiveExerciseYear > amortYrs ? "#f7768e" : "#7aa2f7"}`, background: "#1a1b26", color: "#c0caf5", fontSize: 13, fontFamily: F } }, poSchedule.map((p) => /* @__PURE__ */ import_react.default.createElement("option", { key: p.yr, value: p.yr }, "Year ", p.yr, " \u2014 $", $d(p.price, 1), "M ", p.obligatory ? "(Obligation)" : ""))), effectiveExerciseYear > amortYrs && /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, padding: "6px 8px", borderRadius: 4, background: "rgba(247,118,142,0.1)", border: "1px solid #f7768e44", fontSize: 10, color: "#f7768e", lineHeight: 1.5 } }, "\u26A0 Exercise year (", effectiveExerciseYear, ") exceeds amortization period (", amortYrs, " yrs). After year ", amortYrs, " all balances are zero \u2014 hire, interest, and residual will be zero. Extend the amortization period or reduce the exercise year.")), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginBottom: 13 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 } }, /* @__PURE__ */ import_react.default.createElement("label", { style: { fontSize: 11, fontWeight: 600, color: "#7aa2f7", letterSpacing: "0.05em", fontFamily: F, textTransform: "uppercase" } }, "PO Premium"), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", gap: 2 } }, ["absolute", "premium"].map((m) => /* @__PURE__ */ import_react.default.createElement(
+      "button",
+      {
+        key: m,
+        onClick: () => setPoMode(m),
+        style: {
+          fontSize: 9,
+          padding: "2px 7px",
+          borderRadius: 3,
+          border: "1px solid #3b4261",
+          background: poMode === m ? "#7aa2f7" : "transparent",
+          color: poMode === m ? "#16161e" : "#a9b1d6",
+          cursor: "pointer",
+          fontFamily: F
+        }
+      },
+      m === "absolute" ? "$ Abs" : "% Bal"
+    )))), poMode === "absolute" ? /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", alignItems: "center", gap: 5 } }, /* @__PURE__ */ import_react.default.createElement(
+      "input",
+      {
+        type: "number",
+        value: poPremium,
+        step: 0.1,
+        onChange: (e) => setPoPremium(parseFloat(e.target.value) || 0),
+        style: {
+          width: "100%",
+          padding: "7px 9px",
+          borderRadius: 5,
+          border: "1px solid #3b4261",
+          background: "#1a1b26",
+          color: "#c0caf5",
+          fontSize: 14,
+          fontFamily: F,
+          outline: "none"
+        },
+        onFocus: (e) => e.target.style.borderColor = "#7aa2f7",
+        onBlur: (e) => e.target.style.borderColor = "#3b4261"
+      }
+    ), /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 11, color: "#a9b1d6", minWidth: 32 } }, "$M")) : /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", alignItems: "center", gap: 5 } }, /* @__PURE__ */ import_react.default.createElement(
+      "input",
+      {
+        type: "number",
+        value: R.poPremiumPct != null ? parseFloat(R.poPremiumPct.toFixed(2)) : "",
+        step: 0.5,
+        onChange: (e) => {
+          const pct2 = parseFloat(e.target.value) || 0;
+          const newPoPriceMil = R.remainingBalAtExercise * (1 + pct2 / 100);
+          const basePoPrice = Math.max(0, R.VP - R.VP / amortYrs * effectiveExerciseYear);
+          setPoPremium((newPoPriceMil - basePoPrice) / 1e6);
+        },
+        style: {
+          width: "100%",
+          padding: "7px 9px",
+          borderRadius: 5,
+          border: "1px solid #3b4261",
+          background: "#1a1b26",
+          color: "#c0caf5",
+          fontSize: 14,
+          fontFamily: F,
+          outline: "none"
+        },
+        onFocus: (e) => e.target.style.borderColor = "#7aa2f7",
+        onBlur: (e) => e.target.style.borderColor = "#3b4261"
+      }
+    ), /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 11, color: "#a9b1d6", minWidth: 32 } }, "%")), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", marginTop: 2 } }, poMode === "premium" && R.poPremiumPct != null ? `= $${(R.poPriceMil / 1e6).toFixed(2)}M absolute` : R.poPremiumPct != null ? `= ${R.poPremiumPct.toFixed(1)}% over remaining balance` : "")), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 8, borderRadius: 5, background: "#1e2030", marginBottom: 10, fontSize: 10, color: "#a9b1d6", lineHeight: 1.5 } }, /* @__PURE__ */ import_react.default.createElement("strong", { style: { color: "#bb9af7" } }, "PO(N)"), " = max(0, ", $d(vesselPrice, 1), " \u2212 ", $d(effectiveDecline, 3), "\xD7N)", poPremium !== 0 ? ` + ${$d(poPremium, 2)}` : "", ". Disposal gain tax = max(0, PO\u2212BV) \xD7 ", $d(capGainsTaxRate, 3), "%. Override any row below."), lockInPeriod > 0 && Array.from({ length: lockInPeriod }, (_, i) => i + 1).map((yr) => /* @__PURE__ */ import_react.default.createElement("div", { key: yr, style: { display: "flex", alignItems: "center", gap: 5, marginBottom: 2, padding: "3px 4px", borderRadius: 4, opacity: 0.45 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 11, color: "#f7768e", fontFamily: F, width: 32 } }, "Yr", yr), /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 10, color: "#f7768e", fontStyle: "italic" } }, "locked \u2014 no exercise"), /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 8, color: "#f7768e", marginLeft: "auto", fontFamily: F } }, "LOCK"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 9, color: "#a9b1d6", display: "flex", gap: 4, marginBottom: 4, fontFamily: F } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { width: 32 } }, "YEAR"), /* @__PURE__ */ import_react.default.createElement("span", { style: { width: 76 } }, "PO PRICE"), /* @__PURE__ */ import_react.default.createElement("span", { style: { flex: 1 } }, "STATUS")), poSchedule.map((p, i) => /* @__PURE__ */ import_react.default.createElement("div", { key: i, style: { display: "flex", alignItems: "center", gap: 5, marginBottom: 2, padding: "3px 4px", borderRadius: 4, background: p.yr === effectiveExerciseYear ? "rgba(122,162,247,0.08)" : "transparent" } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 11, color: p.yr === effectiveExerciseYear ? "#7aa2f7" : "#a9b1d6", fontFamily: F, width: 32, fontWeight: p.yr === effectiveExerciseYear ? 700 : 400 } }, "Yr", p.yr), /* @__PURE__ */ import_react.default.createElement(
       "input",
       {
         type: "number",
@@ -21777,7 +22599,148 @@
         style: { fontSize: 9, color: "#f7768e", background: "none", border: "none", cursor: "pointer", padding: 0 }
       },
       "reset"
-    ), /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 8, color: p.obligatory ? "#f7768e" : p.yr === effectiveExerciseYear ? "#7aa2f7" : "#a9b1d6", marginLeft: "auto", fontFamily: F } }, p.obligatory ? "OBLIG" : p.yr === effectiveExerciseYear ? "\u25C0 EXIT" : "OPT"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 10, borderTop: "1px solid #292e42", paddingTop: 10 } }, /* @__PURE__ */ import_react.default.createElement(Inp, { label: "Ordinary Income Tax Rate", value: taxRate, onChange: setTaxRate, unit: "%", help: `${taxRate}% \xB7 std JP corp (23.2%) + local + defense surtax. Stream 2 (tax shield).`, step: 0.01 }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "PO Disposal Gain Tax Rate", value: capGainsTaxRate, onChange: setCapGainsTaxRate, unit: "%", help: "Tax on (PO price \u2212 depreciated book value) at exit. Japan has NO separate capital gains regime for TK proceeds \u2014 per NTA Circular 36\u30FB37\u5171-21, gains are ordinary income. Corporate TK investors: 30.62% (default). Individual TK investors: progressive up to 55% (\u96D1\u6240\u5F97). Non-residents: 20.42% withholding.", step: 0.01 }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "US Treasury Yield", value: treasuryYield, onChange: setTreasuryYield, unit: "%", step: 0.01 }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "JP Tax on Foreign Interest", value: foreignInterestTaxPct, onChange: setForeignInterestTaxPct, unit: "%", step: 0.01, help: "JP SME corp rate ~27%, large corp 30.62%. No preferential rate for corps on foreign interest. US charges 0% (Portfolio Interest Exemption, IRC \xA7871h)." }), /* @__PURE__ */ import_react.default.createElement(Slider, { label: "Special Depreciation (Yr1)", value: specialDeprPct, onChange: (v) => setSpecialDeprPct(Math.min(v, flagInfo.specialMax)), min: 0, max: flagInfo.specialMax, step: 1, unit: "%", help: `MLIT advanced vessels: ${flagInfo.specialMin}\u2013${flagInfo.specialMax}% for ${flagInfo.label}` }), isSecondHand && specialDeprPct > 0 && /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "5px 8px", borderRadius: 4, background: "rgba(247,118,142,0.08)", border: "1px solid #f7768e44", fontSize: 10, color: "#f7768e", marginTop: -6, marginBottom: 8 } }, "\u26A0 Special depreciation (MLIT certified advanced vessel \u512A\u826F\u8239\u8236) normally applies only to ", /* @__PURE__ */ import_react.default.createElement("strong", null, "newbuildings"), ". Second-hand vessels do not qualify unless specially certified. Verify with tax counsel before applying.")))), tab === "depr" && /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: C }, H("#bb9af7", `Depreciation Scale \u2014 ${vType.label}${isSecondHand ? ` (Second-Hand, ${vesselAgeYrs}yr old)` : " (Newbuilding)"}`), isSecondHand && /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "6px 10px", borderRadius: 5, background: "rgba(224,175,104,0.08)", border: "1px solid #e0af6855", marginBottom: 10, fontSize: 10, color: "#e0af68", lineHeight: 1.6 } }, /* @__PURE__ */ import_react.default.createElement("strong", null, "Second-Hand vessel:"), " NTA MOF Art. 3 remaining useful life = ", /* @__PURE__ */ import_react.default.createElement("strong", null, usefulLife, " yr"), " (full new life = ", newbuildingLife, " yr, age = ", vesselAgeYrs, " yr). Depreciation schedule below covers only the ", usefulLife, "-yr remaining life, starting from the full vessel purchase price."), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "8px 10px", borderRadius: 5, background: "#1e2030", marginBottom: 12, fontSize: 10, color: "#a9b1d6", lineHeight: 1.6 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68", fontWeight: 700 } }, "DB (\u5B9A\u7387\u6CD5)"), " applies ", /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68" } }, "2 \xF7 useful life"), " as a rate to the ", /* @__PURE__ */ import_react.default.createElement("em", null, "remaining"), " book value each year \u2014 front loads depreciation. Switches to ", /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#9ece6a", fontWeight: 700 } }, "SL (\u5B9A\u984D\u6CD5)"), " the moment straight line on remaining balance beats DB, per MOF post FY2012 rules. The MOF only sets the useful life; this schedule is the computed output.", isSecondHand && /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68" } }, " For second-hand: useful life = max(2, \u230A(newLife \u2212 age) + age\xD70.2\u230B) per MOF Ord. Art. 3 (\u8010\u7528\u5E74\u6570\u7701\u4EE4 \u7B2C3\u6761).")), /* @__PURE__ */ import_react.default.createElement(Slider, { label: "Special Depreciation Rate", value: specialDeprPct, onChange: (v) => setSpecialDeprPct(Math.min(v, flagInfo.specialMax)), min: 0, max: flagInfo.specialMax, step: 1, unit: "%", help: `${flagInfo.specialMin}\u2013${flagInfo.specialMax}% for ${flagInfo.label} \xB7 slide to see how Yr1 bonus changes the IRR` }), isSecondHand && specialDeprPct > 0 && /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "5px 8px", borderRadius: 4, background: "rgba(247,118,142,0.08)", border: "1px solid #f7768e44", fontSize: 10, color: "#f7768e", marginTop: -8, marginBottom: 10 } }, "\u26A0 Special depreciation (\u512A\u826F\u8239\u8236) is for MLIT-certified newbuildings only. Verify applicability for second-hand vessels with tax counsel."), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", gap: 12, marginBottom: 12, fontSize: 11 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { display: "flex", alignItems: "center", gap: 4 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { width: 12, height: 8, borderRadius: 2, background: "#7aa2f7", display: "inline-block" } }), " Ordinary"), specialDeprPct > 0 && /* @__PURE__ */ import_react.default.createElement("span", { style: { display: "flex", alignItems: "center", gap: 4 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { width: 12, height: 8, borderRadius: 2, background: "#bb9af7", display: "inline-block" } }), " Special")), (() => {
+    ), /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 8, color: p.obligatory ? "#f7768e" : p.yr === effectiveExerciseYear ? "#7aa2f7" : "#a9b1d6", marginLeft: "auto", fontFamily: F } }, p.obligatory ? "OBLIG" : p.yr === effectiveExerciseYear ? "\u25C0 EXIT" : "OPT"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 10, borderTop: "1px solid #292e42", paddingTop: 10 } }, /* @__PURE__ */ import_react.default.createElement(Inp, { label: "Ordinary Income Tax Rate", value: taxRate, onChange: setTaxRate, unit: "%", help: `${taxRate}% \xB7 std JP corp (23.2%) + local + defense surtax. Stream 2 (tax shield).`, step: 0.01 }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "PO Disposal Gain Tax Rate", value: capGainsTaxRate, onChange: setCapGainsTaxRate, unit: "%", help: "Tax on (PO price \u2212 depreciated book value) at exit. Japan has NO separate capital gains regime for TK proceeds \u2014 per NTA Circular 36\u30FB37\u5171-21, gains are ordinary income. Corporate TK investors: 30.62% (default). Individual TK investors: progressive up to 55% (\u96D1\u6240\u5F97). Non-residents: 20.42% withholding.", step: 0.01 }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "US Treasury Yield", value: treasuryYield, onChange: setTreasuryYield, unit: "%", step: 0.01 }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "JP Tax on Foreign Interest", value: foreignInterestTaxPct, onChange: setForeignInterestTaxPct, unit: "%", step: 0.01, help: "JP SME corp rate ~27%, large corp 30.62%. No preferential rate for corps on foreign interest. US charges 0% (Portfolio Interest Exemption, IRC \xA7871h)." }), /* @__PURE__ */ import_react.default.createElement(Slider, { label: "Special Depreciation (Yr1)", value: specialDeprPct, onChange: (v) => setSpecialDeprPct(Math.min(v, flagInfo.specialMax)), min: 0, max: flagInfo.specialMax, step: 1, unit: "%", help: `MLIT advanced vessels: ${flagInfo.specialMin}\u2013${flagInfo.specialMax}% for ${flagInfo.label}` }), isSecondHand && specialDeprPct > 0 && /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "5px 8px", borderRadius: 4, background: "rgba(247,118,142,0.08)", border: "1px solid #f7768e44", fontSize: 10, color: "#f7768e", marginTop: -6, marginBottom: 8 } }, "\u26A0 Special depreciation (MLIT certified advanced vessel \u512A\u826F\u8239\u8236) normally applies only to ", /* @__PURE__ */ import_react.default.createElement("strong", null, "newbuildings"), ". Second-hand vessels do not qualify unless specially certified. Verify with tax counsel before applying.")))), tab === "sensitivity" && /* @__PURE__ */ import_react.default.createElement(
+      SensitivityTab,
+      {
+        R,
+        baseInputs: {
+          vesselPrice,
+          debtPct,
+          amortYrs,
+          sofrRate,
+          spreadBps,
+          jpyBaseRate,
+          bankSpreadBps,
+          swapCostBps,
+          saleCommission,
+          bbcCommission,
+          taxRate,
+          capGainsTaxRate,
+          foreignInterestTaxPct,
+          usefulLife,
+          specialDeprPct,
+          treasuryYield,
+          effectiveExerciseYear,
+          poPriceMil: R.poPriceMil
+        },
+        heatXVar,
+        setHeatXVar,
+        heatYVar,
+        setHeatYVar,
+        onCellClick: (cell) => {
+          if (heatXVar === "spreadBps") setSpreadBps(cell.xVal);
+          else if (heatXVar === "debtPct") setDebtPct(cell.xVal);
+          else if (heatXVar === "sofrRate") setSofrRate(cell.xVal);
+          else if (heatXVar === "taxRate") setTaxRate(cell.xVal);
+          else if (heatXVar === "vesselPrice") setVesselPrice(cell.xVal);
+          else if (heatXVar === "specialDeprPct") setSpecialDeprPct(cell.xVal);
+          else if (heatXVar === "poPremiumPct") {
+            const remBal = Math.max(0, R.VP - R.VP / amortYrs * effectiveExerciseYear);
+            const newPoPriceMil = remBal * (1 + cell.xVal / 100);
+            const basePoPrice = Math.max(0, R.VP - R.VP / amortYrs * effectiveExerciseYear);
+            setPoPremium((newPoPriceMil - basePoPrice) / 1e6);
+          }
+          if (heatYVar === "spreadBps") setSpreadBps(cell.yVal);
+          else if (heatYVar === "debtPct") setDebtPct(cell.yVal);
+          else if (heatYVar === "sofrRate") setSofrRate(cell.yVal);
+          else if (heatYVar === "taxRate") setTaxRate(cell.yVal);
+          else if (heatYVar === "vesselPrice") setVesselPrice(cell.yVal);
+          else if (heatYVar === "specialDeprPct") setSpecialDeprPct(cell.yVal);
+          else if (heatYVar === "poPremiumPct") {
+            const remBal = Math.max(0, R.VP - R.VP / amortYrs * effectiveExerciseYear);
+            const newPoPriceMil = remBal * (1 + cell.yVal / 100);
+            const basePoPrice = Math.max(0, R.VP - R.VP / amortYrs * effectiveExerciseYear);
+            setPoPremium((newPoPriceMil - basePoPrice) / 1e6);
+          }
+          setTab("deal");
+        }
+      }
+    ), tab === "scenarios" && /* @__PURE__ */ import_react.default.createElement(
+      ScenariosTab,
+      {
+        scenarios,
+        R,
+        nameInput: scenarioNameInput,
+        setNameInput: setScenarioNameInput,
+        saving: savingScenario,
+        setSaving: setSavingScenario,
+        onSave: (name) => {
+          if (scenarios.length >= 5) return;
+          const snap = {
+            name,
+            inputs: {
+              vesselTypeId,
+              flagId,
+              vesselPrice,
+              vesselAgeYrs,
+              debtPct,
+              amortYrs,
+              leaseTerm,
+              sofrRate,
+              spreadBps,
+              jpyBaseRate,
+              bankSpreadBps,
+              swapCostBps,
+              saleCommission,
+              bbcCommission,
+              poFirstYear,
+              poLastYear,
+              poPremium,
+              poOverrides,
+              exerciseYear,
+              taxRate,
+              capGainsTaxRate,
+              foreignInterestTaxPct,
+              specialDeprPct,
+              treasuryYield
+            },
+            outputs: {
+              totalStream1: R.totalStream1,
+              totalStream2: R.totalStream2,
+              totalStream3: R.totalStream3,
+              totalEquityDeployed: R.totalEquityDeployed,
+              blendedIRR: R.blendedIRR,
+              equityIRR: R.equityIRR,
+              jolcoProfit: R.jolcoProfit,
+              spread: R.spread,
+              poPremiumPct: R.poPremiumPct
+            }
+          };
+          setScenarios((prev) => [...prev, snap]);
+        },
+        onDelete: (idx) => setScenarios((prev) => prev.filter((_, i) => i !== idx)),
+        onLoad: (sc) => {
+          setSavingScenario(false);
+          setScenarioNameInput("");
+          const i = sc.inputs;
+          setVesselTypeId(i.vesselTypeId);
+          setFlagId(i.flagId);
+          setVesselPrice(i.vesselPrice);
+          setVesselAgeYrs(i.vesselAgeYrs);
+          setDebtPct(i.debtPct);
+          setAmortYrs(i.amortYrs);
+          setLeaseTerm(i.leaseTerm);
+          setSofrRate(i.sofrRate);
+          setSpreadBps(i.spreadBps);
+          setJpyBaseRate(i.jpyBaseRate);
+          setBankSpreadBps(i.bankSpreadBps);
+          setSwapCostBps(i.swapCostBps);
+          setSaleCommission(i.saleCommission);
+          setBbcCommission(i.bbcCommission);
+          setPoFirstYear(i.poFirstYear);
+          setPoLastYear(i.poLastYear);
+          setPoPremium(i.poPremium);
+          setPoOverrides(i.poOverrides);
+          setExerciseYear(i.exerciseYear);
+          setTaxRate(i.taxRate);
+          setCapGainsTaxRate(i.capGainsTaxRate);
+          setForeignInterestTaxPct(i.foreignInterestTaxPct);
+          setSpecialDeprPct(i.specialDeprPct);
+          setTreasuryYield(i.treasuryYield);
+          setTab("deal");
+        }
+      }
+    ), tab === "depr" && /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: C }, H("#bb9af7", `Depreciation Scale \u2014 ${vType.label}${isSecondHand ? ` (Second-Hand, ${vesselAgeYrs}yr old)` : " (Newbuilding)"}`), isSecondHand && /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "6px 10px", borderRadius: 5, background: "rgba(224,175,104,0.08)", border: "1px solid #e0af6855", marginBottom: 10, fontSize: 10, color: "#e0af68", lineHeight: 1.6 } }, /* @__PURE__ */ import_react.default.createElement("strong", null, "Second-Hand vessel:"), " NTA MOF Art. 3 remaining useful life = ", /* @__PURE__ */ import_react.default.createElement("strong", null, usefulLife, " yr"), " (full new life = ", newbuildingLife, " yr, age = ", vesselAgeYrs, " yr). Depreciation schedule below covers only the ", usefulLife, "-yr remaining life, starting from the full vessel purchase price."), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "8px 10px", borderRadius: 5, background: "#1e2030", marginBottom: 12, fontSize: 10, color: "#a9b1d6", lineHeight: 1.6 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68", fontWeight: 700 } }, "DB (\u5B9A\u7387\u6CD5)"), " applies ", /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68" } }, "2 \xF7 useful life"), " as a rate to the ", /* @__PURE__ */ import_react.default.createElement("em", null, "remaining"), " book value each year \u2014 front loads depreciation. Switches to ", /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#9ece6a", fontWeight: 700 } }, "SL (\u5B9A\u984D\u6CD5)"), " the moment straight line on remaining balance beats DB, per MOF post FY2012 rules. The MOF only sets the useful life; this schedule is the computed output.", isSecondHand && /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68" } }, " For second-hand: useful life = max(2, \u230A(newLife \u2212 age) + age\xD70.2\u230B) per MOF Ord. Art. 3 (\u8010\u7528\u5E74\u6570\u7701\u4EE4 \u7B2C3\u6761).")), /* @__PURE__ */ import_react.default.createElement(Slider, { label: "Special Depreciation Rate", value: specialDeprPct, onChange: (v) => setSpecialDeprPct(Math.min(v, flagInfo.specialMax)), min: 0, max: flagInfo.specialMax, step: 1, unit: "%", help: `${flagInfo.specialMin}\u2013${flagInfo.specialMax}% for ${flagInfo.label} \xB7 slide to see how Yr1 bonus changes the IRR` }), isSecondHand && specialDeprPct > 0 && /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "5px 8px", borderRadius: 4, background: "rgba(247,118,142,0.08)", border: "1px solid #f7768e44", fontSize: 10, color: "#f7768e", marginTop: -8, marginBottom: 10 } }, "\u26A0 Special depreciation (\u512A\u826F\u8239\u8236) is for MLIT-certified newbuildings only. Verify applicability for second-hand vessels with tax counsel."), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", gap: 12, marginBottom: 12, fontSize: 11 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { display: "flex", alignItems: "center", gap: 4 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { width: 12, height: 8, borderRadius: 2, background: "#7aa2f7", display: "inline-block" } }), " Ordinary"), specialDeprPct > 0 && /* @__PURE__ */ import_react.default.createElement("span", { style: { display: "flex", alignItems: "center", gap: 4 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { width: 12, height: 8, borderRadius: 2, background: "#bb9af7", display: "inline-block" } }), " Special")), (() => {
       const mx = Math.max(...R.depr.map((d) => d.total));
       return R.depr.map((d, i) => {
         const ordW = d.ordinary / mx * 100;
@@ -21806,7 +22769,7 @@
       const sc = R.saleCommCost;
       const bc = R.totalBbcComm;
       const totalReturned = eq + R.jolcoProfit;
-      const principalBack = R.years.reduce((s, y) => s + y.equityPrincipalReturn, 0);
+      const principalBack = years.reduce((s, y) => s + y.equityPrincipalReturn, 0);
       const profit = R.jolcoProfit;
       const Row = ({ val, label, explain, color, neg = false }) => /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "110px 1fr", gap: "0 18px", marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #1e2030" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { textAlign: "right", fontFamily: F, fontSize: 16, fontWeight: 700, color, paddingTop: 1 } }, neg ? "\u2212" : "+", "\u2009$", $d(Math.abs(val) / 1e6, 2), "M"), /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 12, fontWeight: 600, color: "#c0caf5", marginBottom: 2 } }, label), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", lineHeight: 1.55 } }, explain)));
       return /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement(
@@ -21869,7 +22832,7 @@
           explain: `At exit, the charterer exercises the purchase option at $${$d(R.poPriceMil / 1e6, 1)}M. The SPC first repays the outstanding bank debt from these proceeds. The balance goes to equity investors, less capital gains tax on (PO price \u2212 tax book value of the vessel at that date). If the PO price is below remaining debt, equity receives nothing from Stream \u2462.`
         }
       ), /* @__PURE__ */ import_react.default.createElement("div", { style: { borderTop: "1px dashed #3b4261", margin: "4px 0 12px 0" } }), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "110px 1fr", gap: "0 18px" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { textAlign: "right", fontFamily: F, fontSize: 19, fontWeight: 700, color: profit >= 0 ? "#9ece6a" : "#f7768e", paddingTop: 4 } }, "= $", $d(totalReturned / 1e6, 2), "M"), /* @__PURE__ */ import_react.default.createElement("div", { style: { paddingTop: 4 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: "#c0caf5" } }, "Total Returned \xB7 ", $d(totalReturned / eq, 2), "x MoIC"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, color: "#a9b1d6", marginTop: 3 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: profit >= 0 ? "#9ece6a" : "#f7768e", fontWeight: 700 } }, "$", $d(profit / 1e6, 2), "M net profit"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#6b7299" } }, " \xB7 "), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68", fontWeight: 700 } }, pct(R.blendedIRR), " blended IRR"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#6b7299" } }, " \xB7 "), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#bb9af7", fontWeight: 700 } }, pct(R.equityIRR), " pre-tax IRR")))));
-    })()), /* @__PURE__ */ import_react.default.createElement("div", { style: C }, H("#9ece6a", "Three Return Streams \u2014 Year by Year"), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", gap: 12, marginBottom: 12, fontSize: 11, flexWrap: "wrap" } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#9ece6a" } }, "\u25CF \u2460 Hire Spread (net debt service & BBC)"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#bb9af7" } }, "\u25CF \u2461 Tax Shield"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68" } }, "\u25CF \u2462 Residual/PO")), /* @__PURE__ */ import_react.default.createElement("div", { style: { overflowX: "auto" } }, /* @__PURE__ */ import_react.default.createElement("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 12 } }, /* @__PURE__ */ import_react.default.createElement("thead", null, /* @__PURE__ */ import_react.default.createElement("tr", { style: { borderBottom: "1px solid #3b4261" } }, ["Yr", "\u2460 Hire Spread", "\u2461 Tax Shield", "\u2462 Residual", "Total CF", "Cumulative"].map((h) => /* @__PURE__ */ import_react.default.createElement("th", { key: h, style: { padding: "6px 8px", textAlign: "right", color: "#a9b1d6", fontFamily: F, fontSize: 10, fontWeight: 600, textTransform: "uppercase" } }, h)))), /* @__PURE__ */ import_react.default.createElement("tbody", null, /* @__PURE__ */ import_react.default.createElement("tr", { style: { borderBottom: "1px solid #1e2030", background: "#1e1e2e" } }, /* @__PURE__ */ import_react.default.createElement("td", { style: { padding: "5px 8px", textAlign: "right", fontFamily: F, color: "#c0caf5" } }, "0"), /* @__PURE__ */ import_react.default.createElement("td", { colSpan: 3, style: { padding: "5px 8px", textAlign: "center", color: "#a9b1d6", fontSize: 11 } }, "Equity (", 100 - debtPct, "%) + Sale Comm (", saleCommission, "%)"), /* @__PURE__ */ import_react.default.createElement("td", { style: { padding: "5px 8px", textAlign: "right", fontFamily: F, color: "#f7768e", fontWeight: 600 } }, "-$", $(R.totalEquityDeployed)), /* @__PURE__ */ import_react.default.createElement("td", { style: { padding: "5px 8px", textAlign: "right", fontFamily: F, color: "#f7768e" } }, "-$", $(R.totalEquityDeployed))), R.years.map((y, i) => {
+    })()), /* @__PURE__ */ import_react.default.createElement("div", { style: C }, H("#9ece6a", "Three Return Streams \u2014 Year by Year"), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", gap: 12, marginBottom: 12, fontSize: 11, flexWrap: "wrap" } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#9ece6a" } }, "\u25CF \u2460 Hire Spread (net debt service & BBC)"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#bb9af7" } }, "\u25CF \u2461 Tax Shield"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68" } }, "\u25CF \u2462 Residual/PO")), /* @__PURE__ */ import_react.default.createElement("div", { style: { overflowX: "auto" } }, /* @__PURE__ */ import_react.default.createElement("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 12 } }, /* @__PURE__ */ import_react.default.createElement("thead", null, /* @__PURE__ */ import_react.default.createElement("tr", { style: { borderBottom: "1px solid #3b4261" } }, ["Yr", "\u2460 Hire Spread", "\u2461 Tax Shield", "\u2462 Residual", "Total CF", "Cumulative"].map((h) => /* @__PURE__ */ import_react.default.createElement("th", { key: h, style: { padding: "6px 8px", textAlign: "right", color: "#a9b1d6", fontFamily: F, fontSize: 10, fontWeight: 600, textTransform: "uppercase" } }, h)))), /* @__PURE__ */ import_react.default.createElement("tbody", null, /* @__PURE__ */ import_react.default.createElement("tr", { style: { borderBottom: "1px solid #1e2030", background: "#1e1e2e" } }, /* @__PURE__ */ import_react.default.createElement("td", { style: { padding: "5px 8px", textAlign: "right", fontFamily: F, color: "#c0caf5" } }, "0"), /* @__PURE__ */ import_react.default.createElement("td", { colSpan: 3, style: { padding: "5px 8px", textAlign: "center", color: "#a9b1d6", fontSize: 11 } }, "Equity (", 100 - debtPct, "%) + Sale Comm (", saleCommission, "%)"), /* @__PURE__ */ import_react.default.createElement("td", { style: { padding: "5px 8px", textAlign: "right", fontFamily: F, color: "#f7768e", fontWeight: 600 } }, "-$", $(R.totalEquityDeployed)), /* @__PURE__ */ import_react.default.createElement("td", { style: { padding: "5px 8px", textAlign: "right", fontFamily: F, color: "#f7768e" } }, "-$", $(R.totalEquityDeployed))), years.map((y, i) => {
       const isExpanded = expandedYear === y.yr;
       return /* @__PURE__ */ import_react.default.createElement(import_react.default.Fragment, { key: i }, /* @__PURE__ */ import_react.default.createElement("tr", { style: { borderBottom: isExpanded ? "none" : "1px solid #1e2030", background: y.yr === effectiveExerciseYear ? "rgba(122,162,247,0.04)" : "transparent" } }, /* @__PURE__ */ import_react.default.createElement("td", { style: { padding: "5px 8px", textAlign: "right", fontFamily: F, color: "#c0caf5" } }, y.yr, y.yr === effectiveExerciseYear && /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#7aa2f7", fontSize: 9, marginLeft: 2 } }, "EXIT")), /* @__PURE__ */ import_react.default.createElement(
         "td",
@@ -21905,7 +22868,33 @@
       { l: "Equity IRR", v: pct(R.equityIRR), s: "Hire + Residual only", c: "#e0af68" },
       { l: "Blended IRR", v: pct(R.blendedIRR), s: "Incl. tax shield", c: R.spread > 0 ? "#9ece6a" : "#f7768e" },
       { l: "MoIC", v: R.totalEquityDeployed > 0 ? $d((R.totalEquityDeployed + R.jolcoProfit) / R.totalEquityDeployed, 2) + "x" : "\u2014", s: "Total returned / equity deployed", c: "#7aa2f7" }
-    ].map((x, i) => /* @__PURE__ */ import_react.default.createElement("div", { key: i, style: { textAlign: "center", padding: 12, borderRadius: 8, background: "#16161e" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase" } }, x.l), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: x.c, fontFamily: F } }, x.v), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 9, color: "#a9b1d6", marginTop: 2 } }, x.s)))), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 12, padding: 14, borderRadius: 8, background: "#16161e", fontSize: 12, color: "#a9b1d6", lineHeight: 1.7 } }, /* @__PURE__ */ import_react.default.createElement("strong", { style: { color: "#c0caf5" } }, "How to read this:"), " The tax shield column shows tax you ", /* @__PURE__ */ import_react.default.createElement("em", null, "didn't have to pay"), " because depreciation created paper losses. In early years it's positive (you're saving tax). In later years when depreciation runs out, it may go negative (you're now paying more tax than you would without the JOLCO). The net effect over the lease term is shown in the \u03A3 row. All three streams together, timed correctly, give you the IRR."), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 10, padding: 12, borderRadius: 8, background: "rgba(187,154,247,0.06)", border: "1px solid #bb9af733", fontSize: 11, color: "#a9b1d6", lineHeight: 1.6 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#bb9af7", fontWeight: 700 } }, "\u26A0 Tax capacity caveat:"), " The Blended IRR assumes the investor has sufficient taxable income from other sources to fully absorb depreciation losses every year. If the investor's tax capacity is limited in any given year (e.g. they are already in a loss position), the Stream \u2461 benefit will be deferred or lost entirely, and actual returns will be lower than shown."))), tab === "vs" && /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement("div", { style: { ...C, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 18, borderRadius: 10, background: "#16161e", border: "1px solid #292e42" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", marginBottom: 6 } }, "JOLCO Equity \u2014 Where the money comes from"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 33, fontWeight: 700, color: "#9ece6a", fontFamily: F } }, pct(R.blendedIRR)), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, color: "#a9b1d6", marginBottom: 12 } }, "Equity IRR (all 3 streams combined)"), [
+    ].map((x, i) => /* @__PURE__ */ import_react.default.createElement("div", { key: i, style: { textAlign: "center", padding: 12, borderRadius: 8, background: "#16161e" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase" } }, x.l), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: x.c, fontFamily: F } }, x.v), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 9, color: "#a9b1d6", marginTop: 2 } }, x.s)))), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 12, padding: 14, borderRadius: 8, background: "#16161e", fontSize: 12, color: "#a9b1d6", lineHeight: 1.7 } }, /* @__PURE__ */ import_react.default.createElement("strong", { style: { color: "#c0caf5" } }, "How to read this:"), " The tax shield column shows tax you ", /* @__PURE__ */ import_react.default.createElement("em", null, "didn't have to pay"), " because depreciation created paper losses. In early years it's positive (you're saving tax). In later years when depreciation runs out, it may go negative (you're now paying more tax than you would without the JOLCO). The net effect over the lease term is shown in the \u03A3 row. All three streams together, timed correctly, give you the IRR."), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 10, padding: 12, borderRadius: 8, background: "rgba(187,154,247,0.06)", border: "1px solid #bb9af733", fontSize: 11, color: "#a9b1d6", lineHeight: 1.6 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#bb9af7", fontWeight: 700 } }, "\u26A0 Tax capacity caveat:"), " The Blended IRR assumes the investor has sufficient taxable income from other sources to fully absorb depreciation losses every year. If the investor's tax capacity is limited in any given year (e.g. they are already in a loss position), the Stream \u2461 benefit will be deferred or lost entirely, and actual returns will be lower than shown.")), /* @__PURE__ */ import_react.default.createElement("div", { style: { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginTop: 16 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#7aa2f7" } }, "\u25CF"), "IRR Sensitivity (Tornado) \u2014 impact of \xB11 shock per variable"), /* @__PURE__ */ import_react.default.createElement(
+      TornadoChart,
+      {
+        data: computeTornadoData({
+          vesselPrice,
+          debtPct,
+          amortYrs,
+          sofrRate,
+          spreadBps,
+          jpyBaseRate,
+          bankSpreadBps,
+          swapCostBps,
+          saleCommission,
+          bbcCommission,
+          taxRate,
+          capGainsTaxRate,
+          foreignInterestTaxPct,
+          usefulLife,
+          specialDeprPct,
+          treasuryYield,
+          effectiveExerciseYear,
+          poPriceMil: R.poPriceMil,
+          poPremiumPct: R.poPremiumPct
+        }, R.blendedIRR),
+        baseIRR: R.blendedIRR
+      }
+    )), /* @__PURE__ */ import_react.default.createElement("div", { style: { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginTop: 14 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#bb9af7" } }, "\u25CF"), "Cumulative Equity Cashflow"), /* @__PURE__ */ import_react.default.createElement(CumulativeCFChart, { equityCF: R.equityCF, equityCF_noTax: R.equityCF_noTax }))), tab === "vs" && /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement("div", { style: { ...C, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 18, borderRadius: 10, background: "#16161e", border: "1px solid #292e42" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", marginBottom: 6 } }, "JOLCO Equity \u2014 Where the money comes from"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 33, fontWeight: 700, color: "#9ece6a", fontFamily: F } }, pct(R.blendedIRR)), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, color: "#a9b1d6", marginBottom: 12 } }, "Equity IRR (all 3 streams combined)"), [
       { l: `Equity Deployed (${100 - debtPct}%+comm)`, v: `$${$d(R.totalEquityDeployed / 1e6, 2)}M`, c: "#7aa2f7" },
       { l: "\u2460 Hire Spread (net debt service & BBC)", v: `$${$d(R.totalStream1 / 1e6, 2)}M`, c: "#9ece6a" },
       { l: "\u2461 Tax Shield (Net)", v: `$${$d(R.totalStream2 / 1e6, 2)}M`, c: "#bb9af7" },
