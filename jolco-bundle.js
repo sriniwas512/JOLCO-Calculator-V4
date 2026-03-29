@@ -21691,17 +21691,45 @@
     const last = IRR_COLOR_ANCHORS[IRR_COLOR_ANCHORS.length - 1];
     return `rgb(${last.r},${last.g},${last.b})`;
   }
-  function generateAxisValues(varKey, currentVal) {
-    const CFG = {
-      spreadBps: { step: 25, count: 9, mode: "centred" },
-      poPremiumPct: { step: 5, count: 9, mode: "range", min: -10, max: 30 },
-      debtPct: { step: 5, count: 8, mode: "range", min: 50, max: 85 },
-      taxRate: { step: 2, count: 9, mode: "range", min: 20, max: 36 },
-      sofrRate: { step: 0.5, count: 9, mode: "range", min: 2, max: 6 },
-      vesselPrice: { count: 9, mode: "pct", pct: 0.3 },
-      specialDeprPct: { step: 5, count: 7, mode: "range", min: 0, max: 30 }
-    };
-    const cfg = CFG[varKey];
+  var AXIS_CFG = {
+    spreadBps: { step: 25, count: 9, mode: "centred" },
+    poPremiumPct: { step: 5, count: 9, mode: "range", min: -10, max: 30 },
+    debtPct: { step: 5, count: 8, mode: "range", min: 50, max: 85 },
+    taxRate: { step: 2, count: 9, mode: "range", min: 20, max: 36 },
+    sofrRate: { step: 0.5, count: 9, mode: "range", min: 2, max: 6 },
+    vesselPrice: { count: 9, mode: "pct", pct: 0.3 },
+    specialDeprPct: { step: 5, count: 7, mode: "range", min: 0, max: 30 }
+  };
+  function getDefaultRange(varKey, currentVal) {
+    const cfg = AXIS_CFG[varKey];
+    if (!cfg) return { min: currentVal, max: currentVal, step: 1 };
+    if (cfg.mode === "centred") {
+      const half = Math.floor(cfg.count / 2);
+      return { min: Math.round(currentVal - half * cfg.step), max: Math.round(currentVal + half * cfg.step), step: cfg.step };
+    }
+    if (cfg.mode === "range") return { min: cfg.min, max: cfg.max, step: cfg.step };
+    if (cfg.mode === "pct") {
+      const lo = parseFloat((currentVal * (1 - cfg.pct)).toFixed(2));
+      const hi = parseFloat((currentVal * (1 + cfg.pct)).toFixed(2));
+      const step = parseFloat(((hi - lo) / (cfg.count - 1)).toFixed(2));
+      return { min: lo, max: hi, step };
+    }
+    return { min: currentVal, max: currentVal, step: 1 };
+  }
+  function generateAxisValues(varKey, currentVal, override = null) {
+    if (override && override.step > 0 && override.max >= override.min) {
+      const { min, max, step } = override;
+      const vals = [];
+      const precision = step < 1 ? String(step).split(".")[1]?.length ?? 2 : 0;
+      let v = min, count = 0;
+      while (v <= max + step * 1e-4 && count < 50) {
+        vals.push(parseFloat(v.toFixed(precision + 2)));
+        v = parseFloat((v + step).toFixed(precision + 2));
+        count++;
+      }
+      return vals.length > 0 ? vals : [currentVal];
+    }
+    const cfg = AXIS_CFG[varKey];
     if (!cfg) return [currentVal];
     if (cfg.mode === "centred") {
       const vals = [];
@@ -21968,11 +21996,29 @@
     const [xVals, setXVals] = import_react.default.useState([]);
     const [yVals, setYVals] = import_react.default.useState([]);
     const debounceRef = import_react.default.useRef(null);
+    const xCurrentVal = heatXVar === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[heatXVar] ?? 0;
+    const yCurrentVal = heatYVar === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[heatYVar] ?? 0;
+    const [xRange, setXRange] = import_react.default.useState(() => getDefaultRange(heatXVar, xCurrentVal));
+    const [yRange, setYRange] = import_react.default.useState(() => getDefaultRange(heatYVar, yCurrentVal));
+    const prevXVar = import_react.default.useRef(heatXVar);
+    const prevYVar = import_react.default.useRef(heatYVar);
+    import_react.default.useEffect(() => {
+      if (prevXVar.current !== heatXVar) {
+        setXRange(getDefaultRange(heatXVar, heatXVar === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[heatXVar] ?? 0));
+        prevXVar.current = heatXVar;
+      }
+    }, [heatXVar]);
+    import_react.default.useEffect(() => {
+      if (prevYVar.current !== heatYVar) {
+        setYRange(getDefaultRange(heatYVar, heatYVar === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[heatYVar] ?? 0));
+        prevYVar.current = heatYVar;
+      }
+    }, [heatYVar]);
     import_react.default.useEffect(() => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
-        const xValues = generateAxisValues(heatXVar, heatXVar === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[heatXVar] ?? 0);
-        const yValues = generateAxisValues(heatYVar, heatYVar === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[heatYVar] ?? 0).slice().reverse();
+        const xValues = generateAxisValues(heatXVar, heatXVar === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[heatXVar] ?? 0, xRange);
+        const yValues = generateAxisValues(heatYVar, heatYVar === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[heatYVar] ?? 0, yRange).slice().reverse();
         const newGrid = [];
         let yi = 0;
         const processRow = () => {
@@ -22016,7 +22062,7 @@
       return () => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
       };
-    }, [heatXVar, heatYVar, JSON.stringify(baseInputs)]);
+    }, [heatXVar, heatYVar, JSON.stringify(baseInputs), JSON.stringify(xRange), JSON.stringify(yRange)]);
     const beSpread = import_react.default.useMemo(() => bisectBreakeven(baseInputs, "spreadBps", 0), [JSON.stringify(baseInputs)]);
     const bePO = import_react.default.useMemo(() => bisectBreakeven(baseInputs, "poPremiumPct", 0), [JSON.stringify(baseInputs)]);
     const beUST = import_react.default.useMemo(() => bisectBreakeven(baseInputs, "spreadBps", R.treasPostTaxYield / 100), [JSON.stringify(baseInputs), R.treasPostTaxYield]);
@@ -22030,20 +22076,43 @@
       if (typeof val === "string") return val;
       return val.toFixed(unit === "bps" ? 0 : 1) + " " + unit;
     };
-    return /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement("div", { style: { ...C, display: "flex", gap: 16, alignItems: "center" } }, [
-      { label: "X-Axis", val: heatXVar, set: setHeatXVar, color: "#7aa2f7" },
-      { label: "Y-Axis", val: heatYVar, set: setHeatYVar, color: "#bb9af7" }
-    ].map(({ label, val, set, color }) => /* @__PURE__ */ import_react.default.createElement("div", { key: label, style: { flex: 1 } }, /* @__PURE__ */ import_react.default.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color, letterSpacing: "0.05em", marginBottom: 4, fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase" } }, label), /* @__PURE__ */ import_react.default.createElement(
+    const rangeInputStyle = { width: "100%", padding: "5px 7px", borderRadius: 4, border: "1px solid #3b4261", background: "#16161e", color: "#c0caf5", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", textAlign: "right" };
+    const rangeLabelStyle = { fontSize: 10, color: "#565f89", marginBottom: 2, fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase" };
+    const axes = [
+      { label: "X-Axis", val: heatXVar, set: setHeatXVar, other: heatYVar, color: "#7aa2f7", range: xRange, setRange: setXRange },
+      { label: "Y-Axis", val: heatYVar, set: setHeatYVar, other: heatXVar, color: "#bb9af7", range: yRange, setRange: setYRange }
+    ];
+    return /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement("div", { style: { ...C } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", gap: 16, alignItems: "flex-start" } }, axes.map(({ label, val, set, other, color, range, setRange }) => /* @__PURE__ */ import_react.default.createElement("div", { key: label, style: { flex: 1 } }, /* @__PURE__ */ import_react.default.createElement("label", { style: { display: "block", fontSize: 11, fontWeight: 600, color, letterSpacing: "0.05em", marginBottom: 4, fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase" } }, label), /* @__PURE__ */ import_react.default.createElement(
       "select",
       {
         value: val,
         onChange: (e) => {
-          if (e.target.value !== (label === "X-Axis" ? heatYVar : heatXVar)) set(e.target.value);
+          if (e.target.value !== other) set(e.target.value);
         },
-        style: { width: "100%", padding: "7px 8px", borderRadius: 5, border: "1px solid #3b4261", background: "#1a1b26", color: "#c0caf5", fontSize: 13, fontFamily: "'JetBrains Mono', monospace" }
+        style: { width: "100%", padding: "7px 8px", borderRadius: 5, border: "1px solid #3b4261", background: "#1a1b26", color: "#c0caf5", fontSize: 13, fontFamily: "'JetBrains Mono', monospace", marginBottom: 10 }
       },
-      AXIS_VARS.filter((v) => v.key !== (label === "X-Axis" ? heatYVar : heatXVar)).map((v) => /* @__PURE__ */ import_react.default.createElement("option", { key: v.key, value: v.key }, v.label))
-    ))), !grid && /* @__PURE__ */ import_react.default.createElement("div", { style: { color: "#565f89", fontSize: 11 } }, "Computing\u2026")), /* @__PURE__ */ import_react.default.createElement("div", { style: C }, grid ? /* @__PURE__ */ import_react.default.createElement(
+      AXIS_VARS.filter((v) => v.key !== other).map((v) => /* @__PURE__ */ import_react.default.createElement("option", { key: v.key, value: v.key }, v.label))
+    ), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 6, alignItems: "end" } }, [{ field: "min", placeholder: "Min" }, { field: "max", placeholder: "Max" }, { field: "step", placeholder: "Step" }].map(({ field, placeholder }) => /* @__PURE__ */ import_react.default.createElement("div", { key: field }, /* @__PURE__ */ import_react.default.createElement("div", { style: rangeLabelStyle }, placeholder), /* @__PURE__ */ import_react.default.createElement(
+      "input",
+      {
+        type: "number",
+        value: range[field],
+        placeholder,
+        onChange: (e) => setRange((r) => ({ ...r, [field]: parseFloat(e.target.value) || 0 })),
+        style: rangeInputStyle
+      }
+    ))), /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement("div", { style: rangeLabelStyle }, "\xA0"), /* @__PURE__ */ import_react.default.createElement(
+      "button",
+      {
+        onClick: () => setRange(getDefaultRange(val, val === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[val] ?? 0)),
+        style: { padding: "5px 9px", borderRadius: 4, border: "1px solid #3b4261", background: "#24283b", color: "#565f89", fontSize: 11, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace" },
+        title: "Reset to defaults"
+      },
+      "\u21BA"
+    ))), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, fontSize: 10, color: "#565f89", fontFamily: "'JetBrains Mono', monospace" } }, (() => {
+      const vals = generateAxisValues(val, val === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[val] ?? 0, range);
+      return `${vals.length} values \xB7 ${AXIS_VARS.find((v) => v.key === val)?.unit ?? ""}`;
+    })()))), !grid && /* @__PURE__ */ import_react.default.createElement("div", { style: { color: "#565f89", fontSize: 11, paddingTop: 24 } }, "Computing\u2026"))), /* @__PURE__ */ import_react.default.createElement("div", { style: C }, grid ? /* @__PURE__ */ import_react.default.createElement(
       HeatmapCanvas,
       {
         grid,
