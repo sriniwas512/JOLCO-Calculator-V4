@@ -121,6 +121,7 @@ function computeDealOutputs(inp) {
     jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission,
     taxRate, capGainsTaxRate, foreignInterestTaxPct, usefulLife, specialDeprPct,
     treasuryYield, effectiveExerciseYear, poPriceMil,
+    fxFactor = 1,
   } = inp;
 
   const VP = vesselPrice * 1e6;
@@ -158,7 +159,7 @@ function computeDealOutputs(inp) {
 
     const dep = yr <= depr.length ? depr[yr - 1] : { total: 0, bv: 0 };
     const spcTaxablePL = netHire - dep.total - bankInterest;
-    const taxShieldThisYear = -spcTaxablePL * (taxRate / 100);
+    const taxShieldThisYear = -spcTaxablePL * (taxRate / 100) * fxFactor;
 
     const isExitYear = yr === effectiveExerciseYear;
     let residualToEquity = 0, capGainTax = 0;
@@ -1064,6 +1065,139 @@ function CumulativeCFChart({ equityCF, equityCF_noTax }) {
   );
 }
 
+const JPY_USD_BASE = 150; // Reference JPY/USD rate for FX factor normalization
+
+function exportCashflowCSV(years, R, vesselPrice, spreadBps) {
+  const headers = [
+    "Year", "Fixed Hire ($)", "Variable Hire ($)", "Total Hire ($)", "BBC Comm ($)",
+    "Net Hire ($)", "Bank Principal ($)", "Bank Interest ($)", "Equity Principal ($)",
+    "Hire Spread ($)", "Depreciation ($)", "SPC Taxable P&L ($)", "Tax Shield ($)",
+    "Residual Gain ($)", "Net CF ($)", "Net CF no Tax ($)", "Cumulative CF ($)",
+    "Outstanding Debt ($)", "Outstanding Equity ($)", "Book Value ($)"
+  ];
+  const rows = years.map(y => [
+    y.yr,
+    y.fixedHire.toFixed(0), y.variableHire.toFixed(0), y.totalHire.toFixed(0),
+    y.bbcCommCost.toFixed(0), y.netHire.toFixed(0),
+    y.bankPrincipal.toFixed(0), y.bankInterest.toFixed(0),
+    y.equityPrincipalReturn.toFixed(0), y.hireSpread.toFixed(0),
+    y.dep.toFixed(0), y.spcTaxablePL.toFixed(0), y.taxShieldThisYear.toFixed(0),
+    y.residualGain.toFixed(0), y.netCF.toFixed(0), y.netCF_noTax.toFixed(0),
+    y.cumulativeEquityCF.toFixed(0), y.outstandingDebt.toFixed(0),
+    y.outstandingEquity.toFixed(0), y.bookVal.toFixed(0),
+  ]);
+  const meta = [
+    ["JOLCO IRR Calculator - Equity Cashflow Export"],
+    ["Vessel Price ($M)", (R.VP / 1e6).toFixed(2)],
+    ["Equity Spread (bps)", spreadBps],
+    ["Blended IRR", R.blendedIRR != null ? (R.blendedIRR * 100).toFixed(2) + "%" : "N/A"],
+    ["Charter Economics IRR", R.equityIRR != null ? (R.equityIRR * 100).toFixed(2) + "%" : "N/A"],
+    [],
+  ];
+  const csv = [...meta, headers, ...rows]
+    .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `jolco-cashflows-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function IrrWaterfallChart({ R }) {
+  const canvasRef = React.useRef(null);
+  const containerRef = React.useRef(null);
+  const [width, setWidth] = React.useState(600);
+
+  React.useEffect(() => {
+    if (!containerRef.current) return;
+    setWidth(containerRef.current.offsetWidth);
+    const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width, H = canvas.height;
+    const padL = 130, padR = 80, padT = 18, padB = 24;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#16161e";
+    ctx.fillRect(0, 0, W, H);
+
+    const baseIRR = R.blendedIRR ?? 0;
+    const total = R.totalStream1 + R.totalStream2 + R.totalStream3;
+    if (total <= 0 || baseIRR <= 0) {
+      ctx.fillStyle = "#565f89";
+      ctx.font = "11px 'Inter', sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("No positive IRR to attribute", W / 2, H / 2);
+      return;
+    }
+
+    // Approximate IRR contribution by stream weight
+    const stream1Share = R.totalStream1 / total;
+    const stream2Share = R.totalStream2 / total;
+    const stream3Share = R.totalStream3 / total;
+    const irrBps = baseIRR * 10000;
+
+    const bars = [
+      { label: "① Hire Spread", bps: irrBps * stream1Share, color: "#9ece6a" },
+      { label: "② Tax Shield",  bps: irrBps * stream2Share, color: "#bb9af7" },
+      { label: "③ Residual/PO", bps: irrBps * stream3Share, color: "#e0af68" },
+      { label: "Blended IRR",   bps: irrBps,                color: "#7aa2f7", isTotal: true },
+    ];
+
+    const maxBps = Math.max(...bars.map(b => b.bps)) * 1.15;
+    const xScale = (v) => padL + (v / maxBps) * (W - padL - padR);
+    const barH = 22, gap = 12;
+    const totalH = bars.length * (barH + gap);
+    const startY = padT + (H - padT - padB - totalH) / 2;
+
+    bars.forEach((bar, i) => {
+      const y = startY + i * (barH + gap);
+      const barW = Math.max(2, xScale(bar.bps) - padL);
+
+      if (bar.isTotal) {
+        ctx.fillStyle = "#292e42";
+        ctx.fillRect(padL, y, W - padL - padR, barH);
+      }
+      ctx.fillStyle = bar.color + (bar.isTotal ? "" : "cc");
+      ctx.fillRect(padL, y, barW, barH);
+
+      ctx.fillStyle = "#a9b1d6";
+      ctx.font = `${bar.isTotal ? "bold " : ""}11px 'Inter', sans-serif`;
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.fillText(bar.label, padL - 6, y + barH / 2);
+
+      ctx.fillStyle = bar.isTotal ? "#ffffff" : "#c0caf5";
+      ctx.font = `bold 11px 'JetBrains Mono', monospace`;
+      ctx.textAlign = "left";
+      ctx.fillText(bar.bps.toFixed(0) + " bps", xScale(bar.bps) + 5, y + barH / 2);
+    });
+
+    // Zero line
+    ctx.strokeStyle = "#3b4261";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, padT);
+    ctx.lineTo(padL, H - padB);
+    ctx.stroke();
+  }, [R, width]);
+
+  return (
+    <div ref={containerRef} style={{ width: "100%" }}>
+      <canvas ref={canvasRef} width={width} height={160}
+        style={{ width: "100%", height: "auto", display: "block", borderRadius: 6 }} />
+    </div>
+  );
+}
+
 export default function JOLCOv3() {
   const [tab, setTab] = useState("deal");
   const [expandedYear, setExpandedYear] = useState(null);    // for clickable hire detail
@@ -1128,6 +1262,9 @@ export default function JOLCOv3() {
   const [scenarios, setScenarios] = useState([]);
   const [scenarioNameInput, setScenarioNameInput] = useState("");
   const [savingScenario, setSavingScenario] = useState(false);
+  const [jpyUsdRate, setJpyUsdRate] = useState(150);
+  const [showTaxShock, setShowTaxShock] = useState(false);
+  const [shockDeprPct, setShockDeprPct] = useState(20);
 
   const vType = VESSEL_DB.find(v => v.id === vesselTypeId);
   const flagInfo = FLAG_OPTIONS.find(f => f.id === flagId);
@@ -1146,11 +1283,12 @@ export default function JOLCOv3() {
       jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission,
       taxRate, capGainsTaxRate, foreignInterestTaxPct, usefulLife, specialDeprPct,
       treasuryYield, effectiveExerciseYear, poPriceMil,
+      fxFactor: JPY_USD_BASE / jpyUsdRate,
     });
   }, [vesselPrice, debtPct, amortYrs, sofrRate, spreadBps, jpyBaseRate, bankSpreadBps,
       swapCostBps, saleCommission, bbcCommission, taxRate, capGainsTaxRate,
       foreignInterestTaxPct, usefulLife, specialDeprPct, treasuryYield, flagId,
-      effectiveExerciseYear, poSchedule, vesselAgeYrs]);
+      effectiveExerciseYear, poSchedule, vesselAgeYrs, jpyUsdRate]);
 
 // Patch R.years to include V3 display-compat fields for existing expanded rows
   const years = useMemo(() => R.years.map(y => ({
@@ -1162,6 +1300,23 @@ export default function JOLCOv3() {
     equityInterestIncome: y.hireSpread,
   })), [R.years]);
 
+  const taxShockR = useMemo(() => {
+    if (!showTaxShock) return null;
+    const poEntry = poSchedule.find(p => p.yr === effectiveExerciseYear);
+    const poPriceMil = poEntry ? poEntry.price * 1e6 : 0;
+    return computeDealOutputs({
+      vesselPrice, debtPct, amortYrs, sofrRate, spreadBps,
+      jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission,
+      taxRate, capGainsTaxRate, foreignInterestTaxPct, usefulLife,
+      specialDeprPct: shockDeprPct,
+      treasuryYield, effectiveExerciseYear, poPriceMil,
+      fxFactor: JPY_USD_BASE / jpyUsdRate,
+    });
+  }, [showTaxShock, shockDeprPct, vesselPrice, debtPct, amortYrs, sofrRate, spreadBps,
+      jpyBaseRate, bankSpreadBps, swapCostBps, saleCommission, bbcCommission,
+      taxRate, capGainsTaxRate, foreignInterestTaxPct, usefulLife, treasuryYield,
+      effectiveExerciseYear, poSchedule, jpyUsdRate]);
+  // Note: taxShockR is null when showTaxShock is false. Always null-guard before using.
 
   const C = { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginBottom: 14 };
   const H = (color, text) => <div style={{ fontSize: 13, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 }}><span style={{ color }}>●</span>{text}</div>;
@@ -1247,6 +1402,61 @@ export default function JOLCOv3() {
               <div style={{ fontSize: 10, color: "#565f89", fontStyle: "italic", textAlign: "center", marginTop: 6 }}>
                 Assumes investor has sufficient other taxable income to absorb full depreciation losses each year. If tax capacity is limited, actual returns will be lower.
               </div>
+            </div>
+
+            <div style={{ gridColumn: "1 / -1", background: "#1a1b26", borderRadius: 10, padding: 16, border: "1px solid #292e42", marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#565f89", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10, fontFamily: F }}>IRR Attribution — Contribution by Stream (bps)</div>
+              <IrrWaterfallChart R={R} />
+            </div>
+
+            <div style={{ gridColumn: "1 / -1", background: "#1a1b26", borderRadius: 10, padding: 16, border: "1px solid #292e42", marginBottom: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: showTaxShock ? 14 : 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#565f89", textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: F }}>
+                  ⚡ Tax Law Shock Simulator
+                </div>
+                <button
+                  onClick={() => setShowTaxShock(s => !s)}
+                  style={{ padding: "5px 12px", borderRadius: 5, border: `1px solid ${showTaxShock ? "#f7768e" : "#3b4261"}`, background: showTaxShock ? "rgba(247,118,142,0.12)" : "#24283b", color: showTaxShock ? "#f7768e" : "#a9b1d6", fontSize: 11, fontFamily: F, cursor: "pointer", fontWeight: 600 }}
+                >
+                  {showTaxShock ? "Hide" : "Show"}
+                </button>
+              </div>
+              {showTaxShock && taxShockR && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, alignItems: "end" }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#565f89", textTransform: "uppercase", marginBottom: 4, fontFamily: F }}>Current Special Depr</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: "#bb9af7", fontFamily: F }}>{specialDeprPct}%</div>
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 10, color: "#7aa2f7", textTransform: "uppercase", marginBottom: 4, fontFamily: F, fontWeight: 600 }}>Shocked Depr %</label>
+                    <input type="number" value={shockDeprPct} onChange={e => setShockDeprPct(parseFloat(e.target.value) || 0)}
+                      min={0} max={50} step={1}
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: 5, border: "1px solid #3b4261", background: "#16161e", color: "#c0caf5", fontSize: 14, fontFamily: F }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#565f89", textTransform: "uppercase", marginBottom: 4, fontFamily: F }}>Shocked Blended IRR</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, fontFamily: F, color: taxShockR.blendedIRR > 0 ? "#9ece6a" : "#f7768e" }}>
+                      {pct(taxShockR.blendedIRR)}
+                      {taxShockR.blendedIRR != null && R.blendedIRR != null && (
+                        <span style={{ fontSize: 11, marginLeft: 6, color: (taxShockR.blendedIRR - R.blendedIRR) >= 0 ? "#9ece6a" : "#f7768e" }}>
+                          ({(((taxShockR.blendedIRR - R.blendedIRR)) * 10000).toFixed(0)} bps)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: "#565f89", textTransform: "uppercase", marginBottom: 4, fontFamily: F }}>Shocked Charter IRR</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, fontFamily: F, color: "#e0af68" }}>
+                      {pct(taxShockR.equityIRR)}
+                      {taxShockR.equityIRR != null && R.equityIRR != null && (
+                        <span style={{ fontSize: 11, marginLeft: 6, color: (taxShockR.equityIRR - R.equityIRR) >= 0 ? "#9ece6a" : "#f7768e" }}>
+                          ({(((taxShockR.equityIRR - R.equityIRR)) * 10000).toFixed(0)} bps)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div style={C}>
@@ -1686,6 +1896,14 @@ export default function JOLCOv3() {
         {/* ═══ EQUITY CASHFLOWS ═══ */}
         {tab === "cf" && (
           <div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+              <button
+                onClick={() => exportCashflowCSV(years, R, vesselPrice, spreadBps)}
+                style={{ padding: "7px 16px", borderRadius: 6, border: "1px solid #3b4261", background: "#24283b", color: "#9ece6a", fontSize: 12, fontFamily: F, fontWeight: 600, cursor: "pointer", letterSpacing: "0.04em" }}
+              >
+                ↓ Download CSV
+              </button>
+            </div>
             {/* ── EQUATION WITH EXPLAINERS ── */}
             <div style={C}>
               {H("#7aa2f7", "The Equation — How the Economics Work")}
