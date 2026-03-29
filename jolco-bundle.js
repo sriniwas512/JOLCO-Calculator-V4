@@ -21888,7 +21888,7 @@
         const cx = padL + xi * cellW + cellW / 2;
         ctx.fillText(String(xLabels[xi]), cx, H - padB + 14);
       }
-    }, [grid, xLabels, yLabels]);
+    }, [grid, xLabels, yLabels, canvasSize]);
     const handleMouseMove = (e) => {
       if (!grid || grid.length === 0) return;
       const canvas = canvasRef.current;
