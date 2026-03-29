@@ -21972,7 +21972,7 @@
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         const xValues = generateAxisValues(heatXVar, heatXVar === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[heatXVar] ?? 0);
-        const yValues = generateAxisValues(heatYVar, heatYVar === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[heatYVar] ?? 0);
+        const yValues = generateAxisValues(heatYVar, heatYVar === "poPremiumPct" ? R.poPremiumPct ?? 0 : baseInputs[heatYVar] ?? 0).slice().reverse();
         const newGrid = [];
         let yi = 0;
         const processRow = () => {
