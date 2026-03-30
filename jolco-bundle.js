@@ -22414,8 +22414,14 @@
     const canvasRef = import_react.default.useRef(null);
     const containerRef = import_react.default.useRef(null);
     const [width, setWidth] = import_react.default.useState(700);
+    const [hoveredT, setHoveredT] = import_react.default.useState(null);
+    const [tooltipPos, setTooltipPos] = import_react.default.useState({ x: 0, y: 0 });
     import_react.default.useEffect(() => {
-      if (containerRef.current) setWidth(containerRef.current.offsetWidth);
+      if (!containerRef.current) return;
+      setWidth(containerRef.current.offsetWidth);
+      const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
+      ro.observe(containerRef.current);
+      return () => ro.disconnect();
     }, []);
     import_react.default.useEffect(() => {
       const canvas = canvasRef.current;
@@ -22501,16 +22507,88 @@
         ctx.fillStyle = "#a9b1d6";
         ctx.fillText(label, padL + i * 140 + 16, padT + 7);
       });
-    }, [equityCF, equityCF_noTax, width]);
-    return /* @__PURE__ */ import_react.default.createElement("div", { ref: containerRef, style: { width: "100%" } }, /* @__PURE__ */ import_react.default.createElement(
+      if (hoveredT != null && hoveredT >= 0 && hoveredT < equityCF.length) {
+        const hx = xScale(hoveredT);
+        ctx.strokeStyle = "rgba(192,202,245,0.35)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(hx, padT);
+        ctx.lineTo(hx, H - padB);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        [[cumWith, "#bb9af7"], [cumWithout, "#e0af68"]].forEach(([series, color]) => {
+          const vy = yScale(series[hoveredT]);
+          ctx.beginPath();
+          ctx.arc(hx, vy, 4, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.strokeStyle = "#16161e";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        });
+      }
+    }, [equityCF, equityCF_noTax, width, hoveredT]);
+    const handleMouseMove = import_react.default.useCallback((e) => {
+      if (!equityCF || equityCF.length === 0) return;
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+      const padL = 52, padR = 20;
+      const chartW = rect.width - padL - padR;
+      const mx = e.clientX - rect.left - padL * (rect.width / canvas.width);
+      const t = Math.round(mx / (rect.width - (padL + padR) * (rect.width / canvas.width)) * (equityCF.length - 1));
+      if (t >= 0 && t < equityCF.length) {
+        setHoveredT(t);
+        setTooltipPos({ x: e.clientX, y: e.clientY });
+      } else {
+        setHoveredT(null);
+      }
+    }, [equityCF]);
+    const cumWithTooltip = import_react.default.useMemo(() => {
+      if (!equityCF) return [];
+      const out = [];
+      let s = 0;
+      equityCF.forEach((v) => {
+        s += v;
+        out.push(s / 1e6);
+      });
+      return out;
+    }, [equityCF]);
+    const cumWithoutTooltip = import_react.default.useMemo(() => {
+      if (!equityCF_noTax) return [];
+      const out = [];
+      let s = 0;
+      equityCF_noTax.forEach((v) => {
+        s += v;
+        out.push(s / 1e6);
+      });
+      return out;
+    }, [equityCF_noTax]);
+    return /* @__PURE__ */ import_react.default.createElement("div", { ref: containerRef, style: { width: "100%", position: "relative" } }, /* @__PURE__ */ import_react.default.createElement(
       "canvas",
       {
         ref: canvasRef,
         width,
         height: 220,
-        style: { width: "100%", height: "auto", display: "block" }
+        style: { width: "100%", height: "auto", display: "block", cursor: "crosshair" },
+        onMouseMove: handleMouseMove,
+        onMouseLeave: () => setHoveredT(null)
       }
-    ));
+    ), hoveredT != null && cumWithTooltip[hoveredT] != null && /* @__PURE__ */ import_react.default.createElement("div", { style: {
+      position: "fixed",
+      left: tooltipPos.x + 14,
+      top: tooltipPos.y - 10,
+      background: "#1a1b26",
+      border: "1px solid #3b4261",
+      borderRadius: 8,
+      padding: "10px 14px",
+      fontSize: 11,
+      fontFamily: "'JetBrains Mono', monospace",
+      zIndex: 999,
+      pointerEvents: "none",
+      minWidth: 200,
+      boxShadow: "0 4px 20px rgba(0,0,0,0.5)"
+    } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontWeight: 700, color: "#c0caf5", marginBottom: 6 } }, "Year ", hoveredT), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "auto 1fr", gap: "3px 10px" } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#bb9af7" } }, "With tax shield"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: cumWithTooltip[hoveredT] >= 0 ? "#9ece6a" : "#f7768e", fontWeight: 700 } }, cumWithTooltip[hoveredT] >= 0 ? "+" : "", cumWithTooltip[hoveredT].toFixed(2), "M"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68" } }, "Without tax shield"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: cumWithoutTooltip[hoveredT] >= 0 ? "#9ece6a" : "#f7768e", fontWeight: 700 } }, cumWithoutTooltip[hoveredT] >= 0 ? "+" : "", cumWithoutTooltip[hoveredT].toFixed(2), "M"))));
   }
   var JPY_USD_BASE = 150;
   function exportCashflowCSV(years, R, vesselPrice, spreadBps) {
@@ -22677,8 +22755,8 @@
           ctx.textAlign = "left";
           ctx.fillText(bar.bps.toFixed(0) + " bps", bx + 5, cy);
         } else {
-          ctx.textAlign = "right";
-          ctx.fillText(bar.bps.toFixed(0) + " bps", barLeft - 4, cy);
+          ctx.textAlign = "left";
+          ctx.fillText(bar.bps.toFixed(0) + " bps", zeroX + 5, cy);
         }
         const dollarLabel = "$" + (bar.dollar / 1e6).toFixed(1) + "M";
         if (barWidth > 50) {
@@ -22887,6 +22965,8 @@
     const canvasRef = import_react.default.useRef(null);
     const outerRef = import_react.default.useRef(null);
     const [canvasW, setCanvasW] = import_react.default.useState(700);
+    const [hoveredBin, setHoveredBin] = import_react.default.useState(null);
+    const [tooltipPos, setTooltipPos] = import_react.default.useState({ x: 0, y: 0 });
     import_react.default.useEffect(() => {
       if (!outerRef.current) return;
       setCanvasW(outerRef.current.offsetWidth);
@@ -22967,8 +23047,10 @@
         const x = xScale(v), x2 = xScale(v + binSize);
         const y = yScale(count);
         const color = irrToColor(v / 100);
-        ctx.fillStyle = color;
+        ctx.fillStyle = k === hoveredBin ? "#ffffff" : color;
+        ctx.globalAlpha = k === hoveredBin ? 0.9 : 0.85;
         ctx.fillRect(x + 1, y, Math.max(1, x2 - x - 2), H - padB - y);
+        ctx.globalAlpha = 1;
       }
       [[p10, "#f7768e", "P10"], [p50, "#9ece6a", "P50"], [p90, "#7aa2f7", "P90"]].forEach(([v, color, label]) => {
         if (v == null) return;
@@ -23001,7 +23083,7 @@
       ctx.textAlign = "center";
       ctx.fillText("Count", 0, 0);
       ctx.restore();
-    }, [results, canvasW]);
+    }, [results, canvasW, hoveredBin]);
     const C = { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginBottom: 14 };
     const F2 = "'JetBrains Mono', monospace";
     const varLabels = {
@@ -23052,7 +23134,63 @@
       { l: "Pr(IRR > 0%)", v: results.pAbove0.toFixed(1) + "%", c: results.pAbove0 > 90 ? "#9ece6a" : "#e0af68" },
       { l: "Pr(IRR > 5%)", v: results.pAbove5.toFixed(1) + "%", c: results.pAbove5 > 70 ? "#9ece6a" : "#e0af68" },
       { l: "Pr(IRR > 7%)", v: results.pAbove7.toFixed(1) + "%", c: results.pAbove7 > 50 ? "#9ece6a" : "#f7768e" }
-    ].map(({ l, v, c }) => /* @__PURE__ */ import_react.default.createElement("div", { key: l, style: { ...C, marginBottom: 0, textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#565f89", textTransform: "uppercase", fontFamily: F2 } }, l), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 22, fontWeight: 700, color: c, fontFamily: F2, marginTop: 4 } }, v)))), /* @__PURE__ */ import_react.default.createElement("div", { style: C }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, fontWeight: 600, color: "#565f89", textTransform: "uppercase", fontFamily: F2, marginBottom: 10 } }, "Blended IRR Distribution (", results.n.toLocaleString(), " simulations)"), /* @__PURE__ */ import_react.default.createElement("canvas", { ref: canvasRef, width: canvasW, height: 220, style: { width: "100%", height: "auto", display: "block", borderRadius: 6 } }))));
+    ].map(({ l, v, c }) => /* @__PURE__ */ import_react.default.createElement("div", { key: l, style: { ...C, marginBottom: 0, textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#565f89", textTransform: "uppercase", fontFamily: F2 } }, l), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 22, fontWeight: 700, color: c, fontFamily: F2, marginTop: 4 } }, v)))), /* @__PURE__ */ import_react.default.createElement("div", { style: { ...C, position: "relative" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, fontWeight: 600, color: "#565f89", textTransform: "uppercase", fontFamily: F2, marginBottom: 10 } }, "Blended IRR Distribution (", results.n.toLocaleString(), " simulations)"), /* @__PURE__ */ import_react.default.createElement(
+      "canvas",
+      {
+        ref: canvasRef,
+        width: canvasW,
+        height: 220,
+        style: { width: "100%", height: "auto", display: "block", borderRadius: 6, cursor: "crosshair" },
+        onMouseMove: (e) => {
+          if (!results) return;
+          const { irrs } = results;
+          const canvas = canvasRef.current;
+          const rect = canvas.getBoundingClientRect();
+          const padL = 45, padR = 20;
+          const lo = Math.floor(irrs[0] - 0.5), hi = Math.ceil(irrs[irrs.length - 1] + 0.5);
+          const binSize = Math.max(0.25, (hi - lo) / 40);
+          const chartW = rect.width - padL * (rect.width / canvas.width) - padR * (rect.width / canvas.width);
+          const mx = e.clientX - rect.left - padL * (rect.width / canvas.width);
+          const v = lo + mx / chartW * (hi - lo);
+          const k = Math.floor((v - lo) / binSize);
+          const totalBins = Math.ceil((hi - lo) / binSize);
+          if (k >= 0 && k < totalBins) {
+            setHoveredBin(k);
+            setTooltipPos({ x: e.clientX, y: e.clientY });
+          } else {
+            setHoveredBin(null);
+          }
+        },
+        onMouseLeave: () => setHoveredBin(null)
+      }
+    ), hoveredBin != null && results && (() => {
+      const { irrs } = results;
+      const lo = Math.floor(irrs[0] - 0.5), hi = Math.ceil(irrs[irrs.length - 1] + 0.5);
+      const binSize = Math.max(0.25, (hi - lo) / 40);
+      const bins = {};
+      irrs.forEach((v) => {
+        const k = Math.floor((v - lo) / binSize);
+        bins[k] = (bins[k] || 0) + 1;
+      });
+      const count = bins[hoveredBin] || 0;
+      const binLo = (lo + hoveredBin * binSize).toFixed(2);
+      const binHi = (lo + (hoveredBin + 1) * binSize).toFixed(2);
+      return /* @__PURE__ */ import_react.default.createElement("div", { style: {
+        position: "fixed",
+        left: tooltipPos.x + 14,
+        top: tooltipPos.y - 10,
+        background: "#1a1b26",
+        border: "1px solid #3b4261",
+        borderRadius: 8,
+        padding: "10px 14px",
+        fontSize: 11,
+        fontFamily: F2,
+        zIndex: 999,
+        pointerEvents: "none",
+        minWidth: 190,
+        boxShadow: "0 4px 20px rgba(0,0,0,0.5)"
+      } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontWeight: 700, color: "#c0caf5", marginBottom: 6 } }, "IRR ", binLo, "% \u2013 ", binHi, "%"), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "auto 1fr", gap: "3px 10px" } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#565f89" } }, "Simulations"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#9ece6a", fontWeight: 700 } }, count), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#565f89" } }, "Probability"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#7aa2f7", fontWeight: 700 } }, (count / irrs.length * 100).toFixed(1), "%")));
+    })())));
   }
   function JOLCOv3() {
     const [tab, setTab] = (0, import_react.useState)("deal");

@@ -1067,9 +1067,15 @@ function CumulativeCFChart({ equityCF, equityCF_noTax }) {
   const canvasRef = React.useRef(null);
   const containerRef = React.useRef(null);
   const [width, setWidth] = React.useState(700);
+  const [hoveredT, setHoveredT] = React.useState(null);
+  const [tooltipPos, setTooltipPos] = React.useState({ x: 0, y: 0 });
 
   React.useEffect(() => {
-    if (containerRef.current) setWidth(containerRef.current.offsetWidth);
+    if (!containerRef.current) return;
+    setWidth(containerRef.current.offsetWidth);
+    const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
   }, []);
 
   React.useEffect(() => {
@@ -1153,12 +1159,87 @@ function CumulativeCFChart({ equityCF, equityCF_noTax }) {
       ctx.fillStyle = "#a9b1d6";
       ctx.fillText(label, padL + i * 140 + 16, padT + 7);
     });
-  }, [equityCF, equityCF_noTax, width]);
+
+    // Hover crosshair
+    if (hoveredT != null && hoveredT >= 0 && hoveredT < equityCF.length) {
+      const hx = xScale(hoveredT);
+      ctx.strokeStyle = "rgba(192,202,245,0.35)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(hx, padT); ctx.lineTo(hx, H - padB); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Dot on each line
+      [[cumWith, "#bb9af7"], [cumWithout, "#e0af68"]].forEach(([series, color]) => {
+        const vy = yScale(series[hoveredT]);
+        ctx.beginPath();
+        ctx.arc(hx, vy, 4, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = "#16161e";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      });
+    }
+  }, [equityCF, equityCF_noTax, width, hoveredT]);
+
+  const handleMouseMove = React.useCallback((e) => {
+    if (!equityCF || equityCF.length === 0) return;
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const padL = 52, padR = 20;
+    const chartW = rect.width - padL - padR;
+    const mx = (e.clientX - rect.left - padL * (rect.width / canvas.width));
+    const t = Math.round((mx / (rect.width - (padL + padR) * (rect.width / canvas.width))) * (equityCF.length - 1));
+    if (t >= 0 && t < equityCF.length) {
+      setHoveredT(t);
+      setTooltipPos({ x: e.clientX, y: e.clientY });
+    } else {
+      setHoveredT(null);
+    }
+  }, [equityCF]);
+
+  // Compute cumulative values for tooltip
+  const cumWithTooltip = React.useMemo(() => {
+    if (!equityCF) return [];
+    const out = []; let s = 0;
+    equityCF.forEach(v => { s += v; out.push(s / 1e6); });
+    return out;
+  }, [equityCF]);
+  const cumWithoutTooltip = React.useMemo(() => {
+    if (!equityCF_noTax) return [];
+    const out = []; let s = 0;
+    equityCF_noTax.forEach(v => { s += v; out.push(s / 1e6); });
+    return out;
+  }, [equityCF_noTax]);
 
   return (
-    <div ref={containerRef} style={{ width: "100%" }}>
+    <div ref={containerRef} style={{ width: "100%", position: "relative" }}>
       <canvas ref={canvasRef} width={width} height={220}
-        style={{ width: "100%", height: "auto", display: "block" }} />
+        style={{ width: "100%", height: "auto", display: "block", cursor: "crosshair" }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoveredT(null)}
+      />
+      {hoveredT != null && cumWithTooltip[hoveredT] != null && (
+        <div style={{
+          position: "fixed", left: tooltipPos.x + 14, top: tooltipPos.y - 10,
+          background: "#1a1b26", border: "1px solid #3b4261", borderRadius: 8,
+          padding: "10px 14px", fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+          zIndex: 999, pointerEvents: "none", minWidth: 200, boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+        }}>
+          <div style={{ fontWeight: 700, color: "#c0caf5", marginBottom: 6 }}>Year {hoveredT}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "3px 10px" }}>
+            <span style={{ color: "#bb9af7" }}>With tax shield</span>
+            <span style={{ color: cumWithTooltip[hoveredT] >= 0 ? "#9ece6a" : "#f7768e", fontWeight: 700 }}>
+              {cumWithTooltip[hoveredT] >= 0 ? "+" : ""}{cumWithTooltip[hoveredT].toFixed(2)}M
+            </span>
+            <span style={{ color: "#e0af68" }}>Without tax shield</span>
+            <span style={{ color: cumWithoutTooltip[hoveredT] >= 0 ? "#9ece6a" : "#f7768e", fontWeight: 700 }}>
+              {cumWithoutTooltip[hoveredT] >= 0 ? "+" : ""}{cumWithoutTooltip[hoveredT].toFixed(2)}M
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1307,8 +1388,9 @@ function IrrWaterfallChart({ R }) {
         ctx.textAlign = "left";
         ctx.fillText(bar.bps.toFixed(0) + " bps", bx + 5, cy);
       } else {
-        ctx.textAlign = "right";
-        ctx.fillText(bar.bps.toFixed(0) + " bps", barLeft - 4, cy);
+        // Place AFTER zero line (right side) so it never overlaps the label on the left
+        ctx.textAlign = "left";
+        ctx.fillText(bar.bps.toFixed(0) + " bps", zeroX + 5, cy);
       }
 
       // Δ$ label inside bar if wide enough
@@ -1537,6 +1619,8 @@ function MonteCarloTab({ baseInputs, R }) {
   const canvasRef = React.useRef(null);
   const outerRef = React.useRef(null);
   const [canvasW, setCanvasW] = React.useState(700);
+  const [hoveredBin, setHoveredBin] = React.useState(null);
+  const [tooltipPos, setTooltipPos] = React.useState({ x: 0, y: 0 });
 
   React.useEffect(() => {
     if (!outerRef.current) return;
@@ -1623,8 +1707,10 @@ function MonteCarloTab({ baseInputs, R }) {
       const x = xScale(v), x2 = xScale(v + binSize);
       const y = yScale(count);
       const color = irrToColor(v / 100);
-      ctx.fillStyle = color;
+      ctx.fillStyle = k === hoveredBin ? "#ffffff" : color;
+      ctx.globalAlpha = k === hoveredBin ? 0.9 : 0.85;
       ctx.fillRect(x + 1, y, Math.max(1, x2 - x - 2), H - padB - y);
+      ctx.globalAlpha = 1;
     }
 
     // Percentile lines
@@ -1659,7 +1745,7 @@ function MonteCarloTab({ baseInputs, R }) {
     ctx.textAlign = "center";
     ctx.fillText("Count", 0, 0);
     ctx.restore();
-  }, [results, canvasW]);
+  }, [results, canvasW, hoveredBin]);
 
   const C = { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginBottom: 14 };
   const F = "'JetBrains Mono', monospace";
@@ -1744,9 +1830,58 @@ function MonteCarloTab({ baseInputs, R }) {
               </div>
             ))}
           </div>
-          <div style={C}>
+          <div style={{ ...C, position: "relative" }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: "#565f89", textTransform: "uppercase", fontFamily: F, marginBottom: 10 }}>Blended IRR Distribution ({results.n.toLocaleString()} simulations)</div>
-            <canvas ref={canvasRef} width={canvasW} height={220} style={{ width: "100%", height: "auto", display: "block", borderRadius: 6 }} />
+            <canvas ref={canvasRef} width={canvasW} height={220}
+              style={{ width: "100%", height: "auto", display: "block", borderRadius: 6, cursor: "crosshair" }}
+              onMouseMove={(e) => {
+                if (!results) return;
+                const { irrs } = results;
+                const canvas = canvasRef.current;
+                const rect = canvas.getBoundingClientRect();
+                const padL = 45, padR = 20;
+                const lo = Math.floor(irrs[0] - 0.5), hi = Math.ceil(irrs[irrs.length - 1] + 0.5);
+                const binSize = Math.max(0.25, (hi - lo) / 40);
+                const chartW = rect.width - padL * (rect.width / canvas.width) - padR * (rect.width / canvas.width);
+                const mx = e.clientX - rect.left - padL * (rect.width / canvas.width);
+                const v = lo + (mx / chartW) * (hi - lo);
+                const k = Math.floor((v - lo) / binSize);
+                const totalBins = Math.ceil((hi - lo) / binSize);
+                if (k >= 0 && k < totalBins) {
+                  setHoveredBin(k);
+                  setTooltipPos({ x: e.clientX, y: e.clientY });
+                } else {
+                  setHoveredBin(null);
+                }
+              }}
+              onMouseLeave={() => setHoveredBin(null)}
+            />
+            {hoveredBin != null && results && (() => {
+              const { irrs } = results;
+              const lo = Math.floor(irrs[0] - 0.5), hi = Math.ceil(irrs[irrs.length - 1] + 0.5);
+              const binSize = Math.max(0.25, (hi - lo) / 40);
+              const bins = {};
+              irrs.forEach(v => { const k = Math.floor((v - lo) / binSize); bins[k] = (bins[k] || 0) + 1; });
+              const count = bins[hoveredBin] || 0;
+              const binLo = (lo + hoveredBin * binSize).toFixed(2);
+              const binHi = (lo + (hoveredBin + 1) * binSize).toFixed(2);
+              return (
+                <div style={{
+                  position: "fixed", left: tooltipPos.x + 14, top: tooltipPos.y - 10,
+                  background: "#1a1b26", border: "1px solid #3b4261", borderRadius: 8,
+                  padding: "10px 14px", fontSize: 11, fontFamily: F, zIndex: 999,
+                  pointerEvents: "none", minWidth: 190, boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+                }}>
+                  <div style={{ fontWeight: 700, color: "#c0caf5", marginBottom: 6 }}>IRR {binLo}% – {binHi}%</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "3px 10px" }}>
+                    <span style={{ color: "#565f89" }}>Simulations</span>
+                    <span style={{ color: "#9ece6a", fontWeight: 700 }}>{count}</span>
+                    <span style={{ color: "#565f89" }}>Probability</span>
+                    <span style={{ color: "#7aa2f7", fontWeight: 700 }}>{((count / irrs.length) * 100).toFixed(1)}%</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </>
       )}
