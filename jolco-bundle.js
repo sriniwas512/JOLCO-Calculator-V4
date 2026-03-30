@@ -21699,7 +21699,8 @@
     taxRate: { step: 2, count: 9, mode: "range", min: 20, max: 36 },
     sofrRate: { step: 0.5, count: 9, mode: "range", min: 2, max: 6 },
     vesselPrice: { count: 9, mode: "pct", pct: 0.3 },
-    specialDeprPct: { step: 5, count: 7, mode: "range", min: 0, max: 30 }
+    specialDeprPct: { step: 5, count: 7, mode: "range", min: 0, max: 30 },
+    jpyUsdRate: { step: 5, count: 9, mode: "range", min: 120, max: 180 }
   };
   function getDefaultRange(varKey, currentVal) {
     const cfg = AXIS_CFG[varKey];
@@ -21990,7 +21991,8 @@
     { key: "taxRate", label: "Investor Tax Rate %", unit: "%" },
     { key: "sofrRate", label: "SOFR Rate %", unit: "%" },
     { key: "vesselPrice", label: "Vessel Price ($M)", unit: "$M" },
-    { key: "specialDeprPct", label: "Special Depreciation %", unit: "%" }
+    { key: "specialDeprPct", label: "Special Depreciation %", unit: "%" },
+    { key: "jpyUsdRate", label: "JPY/USD Rate (\xA5)", unit: "\xA5" }
   ];
   function SensitivityTab({ R, baseInputs, heatXVar, setHeatXVar, heatYVar, setHeatYVar, onCellClick }) {
     const [grid, setGrid] = import_react.default.useState(null);
@@ -22036,12 +22038,16 @@
             if (heatXVar === "poPremiumPct") {
               const remBal = Math.max(0, inp.vesselPrice * 1e6 - inp.vesselPrice * 1e6 / inp.amortYrs * inp.effectiveExerciseYear);
               inp.poPriceMil = remBal * (1 + xVal / 100);
+            } else if (heatXVar === "jpyUsdRate") {
+              inp.fxFactor = (inp.jpyUsdBase ?? JPY_USD_BASE) / xVal;
             } else {
               inp[heatXVar] = xVal;
             }
             if (heatYVar === "poPremiumPct") {
               const remBal = Math.max(0, inp.vesselPrice * 1e6 - inp.vesselPrice * 1e6 / inp.amortYrs * inp.effectiveExerciseYear);
               inp.poPriceMil = remBal * (1 + yVal / 100);
+            } else if (heatYVar === "jpyUsdRate") {
+              inp.fxFactor = (inp.jpyUsdBase ?? JPY_USD_BASE) / yVal;
             } else {
               inp[heatYVar] = yVal;
             }
@@ -22575,6 +22581,322 @@
       }
     ));
   }
+  var STATE_VERSION = 1;
+  function encodeState(s) {
+    try {
+      return "#" + btoa(JSON.stringify({ v: STATE_VERSION, ...s }));
+    } catch (_) {
+      return "";
+    }
+  }
+  function decodeState(hash) {
+    try {
+      if (!hash || hash.length < 2) return null;
+      const obj = JSON.parse(atob(hash.slice(1)));
+      if (obj.v !== STATE_VERSION) return null;
+      return obj;
+    } catch (_) {
+      return null;
+    }
+  }
+  function buildMemoHTML(R, inputs) {
+    const { vesselPrice, spreadBps, debtPct, amortYrs, exerciseYear, specialDeprPct } = inputs;
+    const pctFmt = (v) => v != null ? (v * 100).toFixed(2) + "%" : "\u2014";
+    const moneyFmt = (v) => v != null ? "$" + (v / 1e6).toFixed(2) + "M" : "\u2014";
+    const bpsFmt = (v) => v != null ? (v * 1e4).toFixed(0) + " bps" : "\u2014";
+    const rows = R.years.map((y) => `
+    <tr>
+      <td>${y.yr}</td>
+      <td>${moneyFmt(y.totalHire)}</td>
+      <td>${moneyFmt(y.hireSpread)}</td>
+      <td>${moneyFmt(y.taxShieldThisYear)}</td>
+      <td>${moneyFmt(y.residualGain || 0)}</td>
+      <td>${moneyFmt(y.netCF)}</td>
+      <td style="color:${y.cumulativeEquityCF >= 0 ? "#2d7a2d" : "#a83232"}">${moneyFmt(y.cumulativeEquityCF)}</td>
+    </tr>`).join("");
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>JOLCO Investment Memo \u2014 ${(/* @__PURE__ */ new Date()).toLocaleDateString()}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color: #1a1a2e; background: #fff; padding: 32px; max-width: 960px; margin: 0 auto; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    h2 { font-size: 14px; font-weight: 600; margin: 20px 0 8px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+    .subtitle { font-size: 11px; color: #666; margin-bottom: 24px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+    .kpi { border: 1px solid #ddd; border-radius: 6px; padding: 12px; }
+    .kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #666; }
+    .kpi-val { font-size: 22px; font-weight: 700; margin-top: 4px; }
+    .stream-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    .stream { border: 1px solid #ddd; border-radius: 6px; padding: 12px; text-align: center; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { background: #f0f0f0; padding: 6px 8px; text-align: right; font-weight: 600; font-size: 10px; text-transform: uppercase; }
+    th:first-child { text-align: center; }
+    td { padding: 5px 8px; text-align: right; border-bottom: 1px solid #f0f0f0; }
+    td:first-child { text-align: center; font-weight: 600; }
+    .green { color: #2d7a2d; } .red { color: #a83232; } .blue { color: #1a4fa8; }
+    @media print { body { padding: 16px; } .no-print { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="no-print" style="margin-bottom:20px;padding:10px;background:#f5f5f5;border-radius:4px;font-size:11px;color:#666">
+    Press <strong>Cmd+P</strong> (Mac) or <strong>Ctrl+P</strong> (Windows) to save as PDF.
+  </div>
+  <h1>JOLCO TK Equity \u2014 Investment Memo</h1>
+  <div class="subtitle">
+    Generated ${(/* @__PURE__ */ new Date()).toLocaleString()} \xB7 Vessel $${vesselPrice.toFixed(1)}M \xB7 ${debtPct}% Leverage \xB7 ${amortYrs}yr amort \xB7 ${spreadBps}bps equity spread \xB7 Exit Yr ${exerciseYear}
+  </div>
+
+  <h2>Key Performance Indicators</h2>
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-label">Blended IRR (All Streams)</div>
+      <div class="kpi-val ${R.blendedIRR > 0 ? "green" : "red"}">${pctFmt(R.blendedIRR)}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Charter Economics IRR</div>
+      <div class="kpi-val" style="color:#996600">${pctFmt(R.equityIRR)}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">vs US Treasury (post-tax)</div>
+      <div class="kpi-val ${R.spread > 0 ? "green" : "red"}">${bpsFmt(R.spread)}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Equity Deployed</div>
+      <div class="kpi-val blue">${moneyFmt(R.totalEquityDeployed)}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Total Profit</div>
+      <div class="kpi-val ${R.jolcoProfit > 0 ? "green" : "red"}">${moneyFmt(R.jolcoProfit)}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">MoIC</div>
+      <div class="kpi-val">${((R.totalEquityDeployed + R.jolcoProfit) / R.totalEquityDeployed).toFixed(2)}\xD7</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Special Depreciation</div>
+      <div class="kpi-val">${specialDeprPct}%</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Bank Leverage</div>
+      <div class="kpi-val">${debtPct}%</div>
+    </div>
+  </div>
+
+  <h2>Return Streams</h2>
+  <div class="stream-grid">
+    <div class="stream">
+      <div class="kpi-label">\u2460 Hire Spread (pre-tax)</div>
+      <div class="kpi-val green">${moneyFmt(R.totalStream1)}</div>
+      <div style="font-size:10px;color:#666;margin-top:4px">Charter cash yield after debt service</div>
+    </div>
+    <div class="stream">
+      <div class="kpi-label">\u2461 Tax Shield</div>
+      <div class="kpi-val" style="color:#6a2d9a">${moneyFmt(R.totalStream2)}</div>
+      <div style="font-size:10px;color:#666;margin-top:4px">NPV of depreciation tax savings</div>
+    </div>
+    <div class="stream">
+      <div class="kpi-label">\u2462 Residual / PO</div>
+      <div class="kpi-val" style="color:#a06000">${moneyFmt(R.totalStream3)}</div>
+      <div style="font-size:10px;color:#666;margin-top:4px">PO exercise net of debt &amp; cap gains tax</div>
+    </div>
+  </div>
+
+  <h2>Year-by-Year Equity Cashflows</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Yr</th><th>Total Hire</th><th>Hire Spread</th><th>Tax Shield</th>
+        <th>Residual</th><th>Net CF</th><th>Cumulative CF</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+</body>
+</html>`;
+  }
+  function MonteCarloTab({ baseInputs, R }) {
+    const [running, setRunning] = import_react.default.useState(false);
+    const [results, setResults] = import_react.default.useState(null);
+    const [n, setN] = import_react.default.useState(1e3);
+    const [ranges, setRanges] = import_react.default.useState({
+      spreadBps: { lo: Math.max(0, (baseInputs.spreadBps ?? 200) - 100), hi: (baseInputs.spreadBps ?? 200) + 100, enabled: true },
+      poPremiumPct: { lo: -10, hi: 20, enabled: true },
+      vesselPrice: { lo: Math.max(5, (baseInputs.vesselPrice ?? 29) * 0.85), hi: (baseInputs.vesselPrice ?? 29) * 1.15, enabled: false },
+      sofrRate: { lo: Math.max(0.5, (baseInputs.sofrRate ?? 4.3) - 1), hi: (baseInputs.sofrRate ?? 4.3) + 1, enabled: false }
+    });
+    const canvasRef = import_react.default.useRef(null);
+    const outerRef = import_react.default.useRef(null);
+    const [canvasW, setCanvasW] = import_react.default.useState(700);
+    import_react.default.useEffect(() => {
+      if (!outerRef.current) return;
+      setCanvasW(outerRef.current.offsetWidth);
+      const ro = new ResizeObserver(([e]) => setCanvasW(e.contentRect.width));
+      ro.observe(outerRef.current);
+      return () => ro.disconnect();
+    }, []);
+    const runMC = () => {
+      setRunning(true);
+      setResults(null);
+      const irrs = [];
+      let done = 0;
+      const batch = 50;
+      const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+      const processBatch = () => {
+        for (let i = 0; i < batch && done < n; i++, done++) {
+          const inp = { ...baseInputs };
+          if (ranges.spreadBps.enabled) inp.spreadBps = rand(ranges.spreadBps.lo, ranges.spreadBps.hi);
+          if (ranges.sofrRate.enabled) inp.sofrRate = rand(ranges.sofrRate.lo, ranges.sofrRate.hi);
+          if (ranges.vesselPrice.enabled) inp.vesselPrice = rand(ranges.vesselPrice.lo, ranges.vesselPrice.hi);
+          if (ranges.poPremiumPct.enabled) {
+            const remBal = Math.max(0, inp.vesselPrice * 1e6 - inp.vesselPrice * 1e6 / inp.amortYrs * inp.effectiveExerciseYear);
+            const pct2 = rand(ranges.poPremiumPct.lo, ranges.poPremiumPct.hi);
+            inp.poPriceMil = remBal * (1 + pct2 / 100);
+          }
+          try {
+            const r = computeDealOutputs(inp);
+            if (r.blendedIRR != null) irrs.push(r.blendedIRR * 100);
+          } catch (_) {
+          }
+        }
+        if (done < n) {
+          setTimeout(processBatch, 0);
+        } else {
+          irrs.sort((a, b) => a - b);
+          const p = (q) => irrs[Math.floor(q * irrs.length)] ?? null;
+          setResults({
+            irrs,
+            p10: p(0.1),
+            p50: p(0.5),
+            p90: p(0.9),
+            mean: irrs.reduce((a, b) => a + b, 0) / irrs.length,
+            pAbove0: irrs.filter((v) => v > 0).length / irrs.length * 100,
+            pAbove5: irrs.filter((v) => v > 5).length / irrs.length * 100,
+            pAbove7: irrs.filter((v) => v > 7).length / irrs.length * 100,
+            n: irrs.length
+          });
+          setRunning(false);
+        }
+      };
+      setTimeout(processBatch, 0);
+    };
+    import_react.default.useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas || !results) return;
+      const ctx = canvas.getContext("2d");
+      const W = canvas.width, H = canvas.height;
+      const padL = 45, padR = 20, padT = 30, padB = 36;
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = "#16161e";
+      ctx.fillRect(0, 0, W, H);
+      const { irrs, p10, p50, p90 } = results;
+      const lo = Math.floor(irrs[0] - 0.5), hi = Math.ceil(irrs[irrs.length - 1] + 0.5);
+      const binSize = Math.max(0.25, (hi - lo) / 40);
+      const bins = {};
+      irrs.forEach((v) => {
+        const k = Math.floor((v - lo) / binSize);
+        bins[k] = (bins[k] || 0) + 1;
+      });
+      const maxCount = Math.max(...Object.values(bins));
+      const xScale = (v) => padL + (v - lo) / (hi - lo) * (W - padL - padR);
+      const yScale = (c) => padT + (1 - c / maxCount) * (H - padT - padB);
+      const totalBins = Math.ceil((hi - lo) / binSize);
+      for (let k = 0; k < totalBins; k++) {
+        const v = lo + k * binSize;
+        const count = bins[k] || 0;
+        if (count === 0) continue;
+        const x = xScale(v), x2 = xScale(v + binSize);
+        const y = yScale(count);
+        const color = irrToColor(v / 100);
+        ctx.fillStyle = color;
+        ctx.fillRect(x + 1, y, Math.max(1, x2 - x - 2), H - padB - y);
+      }
+      [[p10, "#f7768e", "P10"], [p50, "#9ece6a", "P50"], [p90, "#7aa2f7", "P90"]].forEach(([v, color, label]) => {
+        if (v == null) return;
+        const x = xScale(v);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(x, padT);
+        ctx.lineTo(x, H - padB);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = color;
+        ctx.font = "bold 10px 'JetBrains Mono', monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(label + " " + v.toFixed(1) + "%", x, padT - 6);
+      });
+      ctx.fillStyle = "#565f89";
+      ctx.font = "9px 'JetBrains Mono', monospace";
+      ctx.textAlign = "center";
+      for (let v = Math.ceil(lo); v <= Math.floor(hi); v += 1) {
+        const x = xScale(v);
+        ctx.fillText(v + "%", x, H - padB + 14);
+      }
+      ctx.save();
+      ctx.translate(12, (H - padT - padB) / 2 + padT);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillStyle = "#565f89";
+      ctx.font = "9px 'Inter', sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("Count", 0, 0);
+      ctx.restore();
+    }, [results, canvasW]);
+    const C = { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginBottom: 14 };
+    const F2 = "'JetBrains Mono', monospace";
+    const varLabels = {
+      spreadBps: "Equity Spread (bps)",
+      poPremiumPct: "PO Premium (%)",
+      vesselPrice: "Vessel Price ($M)",
+      sofrRate: "SOFR Rate (%)"
+    };
+    return /* @__PURE__ */ import_react.default.createElement("div", { ref: outerRef }, /* @__PURE__ */ import_react.default.createElement("div", { style: C }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#565f89", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 14, fontFamily: F2 } }, "Monte Carlo \u2014 IRR Distribution Simulator"), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 14 } }, Object.entries(ranges).map(([key, cfg]) => /* @__PURE__ */ import_react.default.createElement("div", { key, style: { background: "#16161e", borderRadius: 8, padding: 12, border: `1px solid ${cfg.enabled ? "#3b4261" : "#1e2030"}`, opacity: cfg.enabled ? 1 : 0.5 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: cfg.enabled ? "#c0caf5" : "#565f89", fontFamily: F2 } }, varLabels[key]), /* @__PURE__ */ import_react.default.createElement("label", { style: { display: "flex", alignItems: "center", gap: 5, cursor: "pointer" } }, /* @__PURE__ */ import_react.default.createElement(
+      "input",
+      {
+        type: "checkbox",
+        checked: cfg.enabled,
+        onChange: (e) => setRanges((r) => ({ ...r, [key]: { ...r[key], enabled: e.target.checked } }))
+      }
+    ), /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 10, color: "#565f89" } }, "vary"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 } }, ["lo", "hi"].map((field) => /* @__PURE__ */ import_react.default.createElement("div", { key: field }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 9, color: "#565f89", marginBottom: 2, fontFamily: F2, textTransform: "uppercase" } }, field === "lo" ? "Min" : "Max"), /* @__PURE__ */ import_react.default.createElement(
+      "input",
+      {
+        type: "number",
+        value: cfg[field],
+        step: 0.5,
+        onChange: (e) => setRanges((r) => ({ ...r, [key]: { ...r[key], [field]: parseFloat(e.target.value) || 0 } })),
+        disabled: !cfg.enabled,
+        style: { width: "100%", padding: "5px 7px", borderRadius: 4, border: "1px solid #3b4261", background: "#24283b", color: "#c0caf5", fontSize: 12, fontFamily: F2 }
+      }
+    ))))))), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", gap: 12, alignItems: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 9, color: "#565f89", marginBottom: 2, fontFamily: F2, textTransform: "uppercase" } }, "Simulations"), /* @__PURE__ */ import_react.default.createElement(
+      "select",
+      {
+        value: n,
+        onChange: (e) => setN(parseInt(e.target.value)),
+        style: { padding: "6px 10px", borderRadius: 5, border: "1px solid #3b4261", background: "#1a1b26", color: "#c0caf5", fontSize: 12, fontFamily: F2 }
+      },
+      [500, 1e3, 2e3, 5e3].map((v) => /* @__PURE__ */ import_react.default.createElement("option", { key: v, value: v }, v.toLocaleString()))
+    )), /* @__PURE__ */ import_react.default.createElement(
+      "button",
+      {
+        onClick: runMC,
+        disabled: running,
+        style: { padding: "9px 22px", borderRadius: 7, border: "1px solid #7aa2f7", background: running ? "#16161e" : "rgba(122,162,247,0.15)", color: running ? "#565f89" : "#7aa2f7", fontSize: 13, fontFamily: F2, fontWeight: 700, cursor: running ? "not-allowed" : "pointer" }
+      },
+      running ? "Running\u2026" : "\u25B6 Run Monte Carlo"
+    ))), results && /* @__PURE__ */ import_react.default.createElement(import_react.default.Fragment, null, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 14 } }, [
+      { l: "P10 (pessimistic)", v: results.p10?.toFixed(2) + "%", c: "#f7768e" },
+      { l: "P50 (median)", v: results.p50?.toFixed(2) + "%", c: "#9ece6a" },
+      { l: "P90 (optimistic)", v: results.p90?.toFixed(2) + "%", c: "#7aa2f7" },
+      { l: "Mean", v: results.mean?.toFixed(2) + "%", c: "#c0caf5" }
+    ].map(({ l, v, c }) => /* @__PURE__ */ import_react.default.createElement("div", { key: l, style: { ...C, marginBottom: 0, textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#565f89", textTransform: "uppercase", fontFamily: F2 } }, l), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 22, fontWeight: 700, color: c, fontFamily: F2, marginTop: 4 } }, v)))), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 } }, [
+      { l: "Pr(IRR > 0%)", v: results.pAbove0.toFixed(1) + "%", c: results.pAbove0 > 90 ? "#9ece6a" : "#e0af68" },
+      { l: "Pr(IRR > 5%)", v: results.pAbove5.toFixed(1) + "%", c: results.pAbove5 > 70 ? "#9ece6a" : "#e0af68" },
+      { l: "Pr(IRR > 7%)", v: results.pAbove7.toFixed(1) + "%", c: results.pAbove7 > 50 ? "#9ece6a" : "#f7768e" }
+    ].map(({ l, v, c }) => /* @__PURE__ */ import_react.default.createElement("div", { key: l, style: { ...C, marginBottom: 0, textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#565f89", textTransform: "uppercase", fontFamily: F2 } }, l), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 22, fontWeight: 700, color: c, fontFamily: F2, marginTop: 4 } }, v)))), /* @__PURE__ */ import_react.default.createElement("div", { style: C }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, fontWeight: 600, color: "#565f89", textTransform: "uppercase", fontFamily: F2, marginBottom: 10 } }, "Blended IRR Distribution (", results.n.toLocaleString(), " simulations)"), /* @__PURE__ */ import_react.default.createElement("canvas", { ref: canvasRef, width: canvasW, height: 220, style: { width: "100%", height: "auto", display: "block", borderRadius: 6 } }))));
+  }
   function JOLCOv3() {
     const [tab, setTab] = (0, import_react.useState)("deal");
     const [expandedYear, setExpandedYear] = (0, import_react.useState)(null);
@@ -22628,6 +22950,38 @@
     const [jpyUsdRate, setJpyUsdRate] = (0, import_react.useState)(150);
     const [showTaxShock, setShowTaxShock] = (0, import_react.useState)(false);
     const [shockDeprPct, setShockDeprPct] = (0, import_react.useState)(20);
+    const [copyLinkStatus, setCopyLinkStatus] = (0, import_react.useState)("idle");
+    const [optTarget, setOptTarget] = (0, import_react.useState)(6);
+    const [optResult, setOptResult] = (0, import_react.useState)(null);
+    import_react.default.useEffect(() => {
+      const s = decodeState(window.location.hash);
+      if (!s) return;
+      if (s.vesselPrice != null) setVesselPrice(s.vesselPrice);
+      if (s.debtPct != null) setDebtPct(s.debtPct);
+      if (s.amortYrs != null) setAmortYrs(s.amortYrs);
+      if (s.sofrRate != null) setSofrRate(s.sofrRate);
+      if (s.spreadBps != null) setSpreadBps(s.spreadBps);
+      if (s.jpyBaseRate != null) setJpyBaseRate(s.jpyBaseRate);
+      if (s.bankSpreadBps != null) setBankSpreadBps(s.bankSpreadBps);
+      if (s.swapCostBps != null) setSwapCostBps(s.swapCostBps);
+      if (s.saleCommission != null) setSaleCommission(s.saleCommission);
+      if (s.bbcCommission != null) setBbcCommission(s.bbcCommission);
+      if (s.taxRate != null) setTaxRate(s.taxRate);
+      if (s.capGainsTaxRate != null) setCapGainsTaxRate(s.capGainsTaxRate);
+      if (s.foreignInterestTaxPct != null) setForeignInterestTaxPct(s.foreignInterestTaxPct);
+      if (s.specialDeprPct != null) setSpecialDeprPct(s.specialDeprPct);
+      if (s.treasuryYield != null) setTreasuryYield(s.treasuryYield);
+      if (s.vesselTypeId != null) setVesselTypeId(s.vesselTypeId);
+      if (s.flagId != null) setFlagId(s.flagId);
+      if (s.vesselAgeYrs != null) setVesselAgeYrs(s.vesselAgeYrs);
+      if (s.leaseTerm != null) setLeaseTerm(s.leaseTerm);
+      if (s.exerciseYear != null) setExerciseYear(s.exerciseYear);
+      if (s.poPremium != null) setPoPremium(s.poPremium);
+      if (s.poFirstYear != null) setPoFirstYear(s.poFirstYear);
+      if (s.poLastYear != null) setPoLastYear(s.poLastYear);
+      if (s.jpyUsdRate != null) setJpyUsdRate(s.jpyUsdRate);
+      if (s.poOverrides != null && typeof s.poOverrides === "object") setPoOverrides(s.poOverrides);
+    }, []);
     const vType = VESSEL_DB.find((v) => v.id === vesselTypeId);
     const flagInfo = FLAG_OPTIONS.find((f) => f.id === flagId);
     const isJPFlag = flagId === "jp";
@@ -22737,10 +23091,117 @@
       poSchedule,
       jpyUsdRate
     ]);
+    const runOptimizer = import_react.default.useCallback(() => {
+      const baseInputs = {
+        vesselPrice,
+        debtPct,
+        amortYrs,
+        sofrRate,
+        spreadBps,
+        jpyBaseRate,
+        bankSpreadBps,
+        swapCostBps,
+        saleCommission,
+        bbcCommission,
+        taxRate,
+        capGainsTaxRate,
+        foreignInterestTaxPct,
+        usefulLife,
+        specialDeprPct,
+        treasuryYield,
+        effectiveExerciseYear,
+        poPriceMil: R.poPriceMil,
+        fxFactor: JPY_USD_BASE / jpyUsdRate
+      };
+      const target = optTarget / 100;
+      const maxPoPct = bisectBreakeven(baseInputs, "poPremiumPct", target);
+      const maxSpread = bisectBreakeven(baseInputs, "spreadBps", target);
+      setOptResult({ maxPoPct, maxSpread, target });
+    }, [
+      vesselPrice,
+      debtPct,
+      amortYrs,
+      sofrRate,
+      spreadBps,
+      jpyBaseRate,
+      bankSpreadBps,
+      swapCostBps,
+      saleCommission,
+      bbcCommission,
+      taxRate,
+      capGainsTaxRate,
+      foreignInterestTaxPct,
+      usefulLife,
+      specialDeprPct,
+      treasuryYield,
+      effectiveExerciseYear,
+      R.poPriceMil,
+      optTarget,
+      jpyUsdRate
+    ]);
     const C = { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginBottom: 14 };
     const H = (color, text) => /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color } }, "\u25CF"), text);
     const T = (t, label) => /* @__PURE__ */ import_react.default.createElement("button", { onClick: () => setTab(t), style: { padding: "9px 16px", fontSize: 12, fontFamily: F, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", background: tab === t ? "#1a1b26" : "transparent", color: tab === t ? "#7aa2f7" : "#6b7299", border: "none", borderBottom: tab === t ? "2px solid #7aa2f7" : "2px solid transparent", cursor: "pointer" } }, label);
-    return /* @__PURE__ */ import_react.default.createElement("div", { style: { minHeight: "100vh", background: "#16161e", fontFamily: "'Inter', sans-serif", color: "#a9b1d6" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { background: "linear-gradient(135deg, #1a1b26, #24283b)", borderBottom: "1px solid #292e42", padding: "20px 28px" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } }, /* @__PURE__ */ import_react.default.createElement("img", { src: "updated bg image.png", alt: "JOLCO", style: { height: 48, width: "auto", objectFit: "contain" } }), /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 19, fontWeight: 700, color: "#c0caf5", fontFamily: F } }, "IRR Calculator ", /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 12, color: "#9ece6a" } }, "v4")), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, color: "#a9b1d6" } }, "Financed ~", debtPct, "% by bank debt, ~", 100 - debtPct, "% by Japanese TK (silent partnership) equity investors \xB7 MOF Depreciation \xB7 Tax Shield Analysis"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { textAlign: "right" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "#ffffff" } }, "Created By Sriniwas Ghate"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#ffffff" } }, "Gibson Shipbrokers, Singapore")))), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", background: "#24283b", borderBottom: "1px solid #292e42", padding: "0 20px", flexWrap: "wrap" } }, T("deal", "Deal Inputs"), T("sensitivity", "Sensitivity"), T("scenarios", "Scenarios"), T("depr", "Depreciation Scale"), T("cf", "Equity Cashflows"), T("vs", "vs Treasury")), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "20px 28px", maxWidth: 1150, margin: "0 auto" } }, tab === "deal" && /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { gridColumn: "1 / -1", ...C, background: "linear-gradient(135deg, #1a1b26, #1e2030)" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" } }, "\u2460 Equity return embedded in charter hire, net of brokerage, allocated to TK investors"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: "#9ece6a", fontFamily: F } }, "$", $d(R.totalStream1 / 1e6, 2), "M"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6" } }, "Hire spread after debt service & ", bbcCommission, "% BBC brokerage"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, fontSize: 9, fontWeight: 700, color: "#9ece6a44", background: "rgba(158,206,106,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" } }, "Cash yield from charter operations (pre-tax)")), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" } }, "\u2461 Tax Shield (Net)"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: "#bb9af7", fontFamily: F } }, "$", $d(R.totalStream2 / 1e6, 2), "M"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6" } }, "Tax saved from depreciation losses"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, fontSize: 9, fontWeight: 700, color: "#bb9af744", background: "rgba(187,154,247,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" } }, "Tax arbitrage \u2014 depends on investor's taxable income capacity")), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" } }, "\u2462 Residual / PO Play"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: "#e0af68", fontFamily: F } }, "$", $d(R.totalStream3 / 1e6, 2), "M"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6" } }, "PO exercise net of debt & cap gains tax"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, fontSize: 9, fontWeight: 700, color: "#e0af6844", background: "rgba(224,175,104,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" } }, "Terminal event \u2014 PO exercise at lease end"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 } }, [
+    return /* @__PURE__ */ import_react.default.createElement("div", { style: { minHeight: "100vh", background: "#16161e", fontFamily: "'Inter', sans-serif", color: "#a9b1d6" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { background: "linear-gradient(135deg, #1a1b26, #24283b)", borderBottom: "1px solid #292e42", padding: "20px 28px" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } }, /* @__PURE__ */ import_react.default.createElement("img", { src: "updated bg image.png", alt: "JOLCO", style: { height: 48, width: "auto", objectFit: "contain" } }), /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 19, fontWeight: 700, color: "#c0caf5", fontFamily: F } }, "IRR Calculator ", /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 12, color: "#9ece6a" } }, "v4")), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, color: "#a9b1d6" } }, "Financed ~", debtPct, "% by bank debt, ~", 100 - debtPct, "% by Japanese TK (silent partnership) equity investors \xB7 MOF Depreciation \xB7 Tax Shield Analysis"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { textAlign: "right" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: "#ffffff" } }, "Created By Sriniwas Ghate"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#ffffff" } }, "Gibson Shipbrokers, Singapore")), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", gap: 8 } }, /* @__PURE__ */ import_react.default.createElement(
+      "button",
+      {
+        onClick: () => {
+          const hash = encodeState({
+            vesselPrice,
+            debtPct,
+            amortYrs,
+            sofrRate,
+            spreadBps,
+            jpyBaseRate,
+            bankSpreadBps,
+            swapCostBps,
+            saleCommission,
+            bbcCommission,
+            taxRate,
+            capGainsTaxRate,
+            foreignInterestTaxPct,
+            specialDeprPct,
+            treasuryYield,
+            vesselTypeId,
+            flagId,
+            vesselAgeYrs,
+            leaseTerm,
+            exerciseYear,
+            poPremium,
+            poFirstYear,
+            poLastYear,
+            jpyUsdRate,
+            poOverrides
+          });
+          const url = window.location.origin + window.location.pathname + hash;
+          navigator.clipboard.writeText(url).then(() => {
+            setCopyLinkStatus("copied");
+            setTimeout(() => setCopyLinkStatus("idle"), 2e3);
+          });
+        },
+        style: { padding: "7px 14px", borderRadius: 6, border: "1px solid #3b4261", background: copyLinkStatus === "copied" ? "rgba(158,206,106,0.15)" : "#24283b", color: copyLinkStatus === "copied" ? "#9ece6a" : "#a9b1d6", fontSize: 11, fontFamily: F, fontWeight: 600, cursor: "pointer", letterSpacing: "0.04em", whiteSpace: "nowrap" }
+      },
+      copyLinkStatus === "copied" ? "\u2713 Copied!" : "\u{1F517} Copy Link"
+    ), /* @__PURE__ */ import_react.default.createElement(
+      "button",
+      {
+        onClick: () => {
+          const html = buildMemoHTML(R, {
+            vesselPrice,
+            spreadBps,
+            debtPct,
+            amortYrs,
+            exerciseYear: effectiveExerciseYear,
+            specialDeprPct
+          });
+          const w = window.open("", "_blank");
+          w.document.write(html);
+          w.document.close();
+        },
+        style: { padding: "7px 14px", borderRadius: 6, border: "1px solid #3b4261", background: "#24283b", color: "#a9b1d6", fontSize: 11, fontFamily: F, fontWeight: 600, cursor: "pointer", letterSpacing: "0.04em", whiteSpace: "nowrap" }
+      },
+      "\u{1F4C4} Export Memo"
+    ))))), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", background: "#24283b", borderBottom: "1px solid #292e42", padding: "0 20px", flexWrap: "wrap" } }, T("deal", "Deal Inputs"), T("sensitivity", "Sensitivity"), T("scenarios", "Scenarios"), T("mc", "Monte Carlo"), T("depr", "Depreciation Scale"), T("cf", "Equity Cashflows"), T("vs", "vs Treasury")), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "20px 28px", maxWidth: 1150, margin: "0 auto" } }, tab === "deal" && /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { gridColumn: "1 / -1", ...C, background: "linear-gradient(135deg, #1a1b26, #1e2030)" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 14 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" } }, "\u2460 Equity return embedded in charter hire, net of brokerage, allocated to TK investors"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: "#9ece6a", fontFamily: F } }, "$", $d(R.totalStream1 / 1e6, 2), "M"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6" } }, "Hire spread after debt service & ", bbcCommission, "% BBC brokerage"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, fontSize: 9, fontWeight: 700, color: "#9ece6a44", background: "rgba(158,206,106,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" } }, "Cash yield from charter operations (pre-tax)")), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" } }, "\u2461 Tax Shield (Net)"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: "#bb9af7", fontFamily: F } }, "$", $d(R.totalStream2 / 1e6, 2), "M"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6" } }, "Tax saved from depreciation losses"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, fontSize: 9, fontWeight: 700, color: "#bb9af744", background: "rgba(187,154,247,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" } }, "Tax arbitrage \u2014 depends on investor's taxable income capacity")), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: 12, borderRadius: 8, background: "#16161e", border: "1px solid #292e42", textAlign: "center" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase", letterSpacing: "0.06em" } }, "\u2462 Residual / PO Play"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: "#e0af68", fontFamily: F } }, "$", $d(R.totalStream3 / 1e6, 2), "M"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6" } }, "PO exercise net of debt & cap gains tax"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 5, fontSize: 9, fontWeight: 700, color: "#e0af6844", background: "rgba(224,175,104,0.08)", padding: "2px 6px", borderRadius: 3, display: "inline-block", letterSpacing: "0.04em" } }, "Terminal event \u2014 PO exercise at lease end"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 } }, [
       { l: "Equity Deployed", v: `$${$d(R.totalEquityDeployed / 1e6, 1)}M`, c: "#7aa2f7" },
       { l: "Total Profit", v: `$${$d(R.jolcoProfit / 1e6, 2)}M`, c: R.jolcoProfit >= 0 ? "#9ece6a" : "#f7768e" },
       { l: "vs UST", v: R.spread != null ? (R.spread > 0 ? "+" : "") + (R.spread * 1e4).toFixed(0) + "bps" : "\u2014", c: R.spread > 0 ? "#9ece6a" : "#f7768e" }
@@ -22780,7 +23241,19 @@
       setPoLastYear(v);
       setExerciseYear(v);
       if (poFirstYear > v) setPoFirstYear(Math.max(1, v - 1));
-    }, unit: "yrs", help: "BBC duration \u2014 how long charterer pays hire. Often shorter than amort period. Last PO / obligation syncs to this.", min: 1, max: 25 }), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "6px 8px", borderRadius: 4, background: "#1e2030", marginBottom: 8, fontSize: 10, color: "#a9b1d6", lineHeight: 1.5 } }, amortYrs !== leaseTerm && /* @__PURE__ */ import_react.default.createElement("span", { style: { color: amortYrs > leaseTerm ? "#e0af68" : "#f7768e" } }, amortYrs > leaseTerm ? `\u26A1 Amort ${amortYrs}yr > Lease ${leaseTerm}yr \u2014 lower hire, outstanding balance of ~$${$d(vesselPrice * 1e6 * (1 - leaseTerm / amortYrs) / 1e6, 2)}M settled via PO at exit` : `\u26A0 Amort ${amortYrs}yr < Lease ${leaseTerm}yr \u2014 vessel is fully amortized before lease ends; no residual debt at PO`), amortYrs === leaseTerm && /* @__PURE__ */ import_react.default.createElement("span", null, "Amort period = Lease term (", amortYrs, "yr) \u2014 debt fully repaid at lease end, minimal PO residual")), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 10, marginBottom: 4, fontSize: 10, fontWeight: 700, color: "#e0af68", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #292e42", paddingBottom: 4 } }, "Bank Loan \u2014 JPY (SPC borrows from Japanese bank)"), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "JPY Base Rate (TIBOR)", value: jpyBaseRate, onChange: setJpyBaseRate, unit: "%", step: 0.05 }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "Bank Spread over JPY Base", value: bankSpreadBps, onChange: setBankSpreadBps, unit: "bps", step: 5, help: "Credit spread charged by lending bank" }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "USD/JPY Cross-Currency Swap Cost", value: swapCostBps, onChange: setSwapCostBps, unit: "bps", step: 5, help: "Cost to swap JPY loan obligation into USD cash flows" }), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "6px 8px", borderRadius: 4, background: "#1e2030", marginBottom: 10, fontSize: 10, color: "#a9b1d6" } }, "Effective USD cost of bank debt: ", /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68", fontWeight: 700 } }, (jpyBaseRate + bankSpreadBps / 100 + swapCostBps / 100).toFixed(2), "%"), " \xB7 JPY ", (jpyBaseRate + bankSpreadBps / 100).toFixed(2), "% + ", swapCostBps, "bps swap"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginBottom: 4, fontSize: 10, fontWeight: 700, color: "#7aa2f7", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #292e42", paddingBottom: 4 } }, "BBC Hire Rate \u2014 USD (SPC lends to charterer)"), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "SOFR Rate (USD)", value: sofrRate, onChange: setSofrRate, unit: "%", step: 0.1, help: "USD reference rate for BBC hire calculation" }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "Equity Spread over SOFR", value: spreadBps, onChange: setSpreadBps, unit: "bps", step: 10, help: "Spread reflecting charterer credit + vessel risk" }), (() => {
+    }, unit: "yrs", help: "BBC duration \u2014 how long charterer pays hire. Often shorter than amort period. Last PO / obligation syncs to this.", min: 1, max: 25 }), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "6px 8px", borderRadius: 4, background: "#1e2030", marginBottom: 8, fontSize: 10, color: "#a9b1d6", lineHeight: 1.5 } }, amortYrs !== leaseTerm && /* @__PURE__ */ import_react.default.createElement("span", { style: { color: amortYrs > leaseTerm ? "#e0af68" : "#f7768e" } }, amortYrs > leaseTerm ? `\u26A1 Amort ${amortYrs}yr > Lease ${leaseTerm}yr \u2014 lower hire, outstanding balance of ~$${$d(vesselPrice * 1e6 * (1 - leaseTerm / amortYrs) / 1e6, 2)}M settled via PO at exit` : `\u26A0 Amort ${amortYrs}yr < Lease ${leaseTerm}yr \u2014 vessel is fully amortized before lease ends; no residual debt at PO`), amortYrs === leaseTerm && /* @__PURE__ */ import_react.default.createElement("span", null, "Amort period = Lease term (", amortYrs, "yr) \u2014 debt fully repaid at lease end, minimal PO residual")), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 10, marginBottom: 4, fontSize: 10, fontWeight: 700, color: "#e0af68", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #292e42", paddingBottom: 4 } }, "Bank Loan \u2014 JPY (SPC borrows from Japanese bank)"), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "JPY Base Rate (TIBOR)", value: jpyBaseRate, onChange: setJpyBaseRate, unit: "%", step: 0.05 }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "Bank Spread over JPY Base", value: bankSpreadBps, onChange: setBankSpreadBps, unit: "bps", step: 5, help: "Credit spread charged by lending bank" }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "USD/JPY Cross-Currency Swap Cost", value: swapCostBps, onChange: setSwapCostBps, unit: "bps", step: 5, help: "Cost to swap JPY loan obligation into USD cash flows" }), /* @__PURE__ */ import_react.default.createElement(
+      Inp,
+      {
+        label: "JPY/USD Rate (\xA5)",
+        value: jpyUsdRate,
+        onChange: setJpyUsdRate,
+        unit: "\xA5",
+        step: 1,
+        min: 80,
+        max: 250,
+        help: `Tax shield FX factor: ${JPY_USD_BASE}/${jpyUsdRate} = ${(JPY_USD_BASE / jpyUsdRate).toFixed(3)}\xD7 vs base ${JPY_USD_BASE}`
+      }
+    ), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "6px 8px", borderRadius: 4, background: "#1e2030", marginBottom: 10, fontSize: 10, color: "#a9b1d6" } }, "Effective USD cost of bank debt: ", /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68", fontWeight: 700 } }, (jpyBaseRate + bankSpreadBps / 100 + swapCostBps / 100).toFixed(2), "%"), " \xB7 JPY ", (jpyBaseRate + bankSpreadBps / 100).toFixed(2), "% + ", swapCostBps, "bps swap"), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginBottom: 4, fontSize: 10, fontWeight: 700, color: "#7aa2f7", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #292e42", paddingBottom: 4 } }, "BBC Hire Rate \u2014 USD (SPC lends to charterer)"), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "SOFR Rate (USD)", value: sofrRate, onChange: setSofrRate, unit: "%", step: 0.1, help: "USD reference rate for BBC hire calculation" }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "Equity Spread over SOFR", value: spreadBps, onChange: setSpreadBps, unit: "bps", step: 10, help: "Spread reflecting charterer credit + vessel risk" }), (() => {
       const mFixed = R.monthlyFixed;
       const mVariable = R.VP * R.equityAllInRate / 12;
       const mTotal = mFixed + mVariable;
@@ -22882,7 +23355,7 @@
         style: { fontSize: 9, color: "#f7768e", background: "none", border: "none", cursor: "pointer", padding: 0 }
       },
       "reset"
-    ), /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 8, color: p.obligatory ? "#f7768e" : p.yr === effectiveExerciseYear ? "#7aa2f7" : "#a9b1d6", marginLeft: "auto", fontFamily: F } }, p.obligatory ? "OBLIG" : p.yr === effectiveExerciseYear ? "\u25C0 EXIT" : "OPT"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 10, borderTop: "1px solid #292e42", paddingTop: 10 } }, /* @__PURE__ */ import_react.default.createElement(Inp, { label: "Ordinary Income Tax Rate", value: taxRate, onChange: setTaxRate, unit: "%", help: `${taxRate}% \xB7 std JP corp (23.2%) + local + defense surtax. Stream 2 (tax shield).`, step: 0.01 }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "PO Disposal Gain Tax Rate", value: capGainsTaxRate, onChange: setCapGainsTaxRate, unit: "%", help: "Tax on (PO price \u2212 depreciated book value) at exit. Japan has NO separate capital gains regime for TK proceeds \u2014 per NTA Circular 36\u30FB37\u5171-21, gains are ordinary income. Corporate TK investors: 30.62% (default). Individual TK investors: progressive up to 55% (\u96D1\u6240\u5F97). Non-residents: 20.42% withholding.", step: 0.01 }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "US Treasury Yield", value: treasuryYield, onChange: setTreasuryYield, unit: "%", step: 0.01 }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "JP Tax on Foreign Interest", value: foreignInterestTaxPct, onChange: setForeignInterestTaxPct, unit: "%", step: 0.01, help: "JP SME corp rate ~27%, large corp 30.62%. No preferential rate for corps on foreign interest. US charges 0% (Portfolio Interest Exemption, IRC \xA7871h)." }), /* @__PURE__ */ import_react.default.createElement(Slider, { label: "Special Depreciation (Yr1)", value: specialDeprPct, onChange: (v) => setSpecialDeprPct(Math.min(v, flagInfo.specialMax)), min: 0, max: flagInfo.specialMax, step: 1, unit: "%", help: `MLIT advanced vessels: ${flagInfo.specialMin}\u2013${flagInfo.specialMax}% for ${flagInfo.label}` }), isSecondHand && specialDeprPct > 0 && /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "5px 8px", borderRadius: 4, background: "rgba(247,118,142,0.08)", border: "1px solid #f7768e44", fontSize: 10, color: "#f7768e", marginTop: -6, marginBottom: 8 } }, "\u26A0 Special depreciation (MLIT certified advanced vessel \u512A\u826F\u8239\u8236) normally applies only to ", /* @__PURE__ */ import_react.default.createElement("strong", null, "newbuildings"), ". Second-hand vessels do not qualify unless specially certified. Verify with tax counsel before applying.")))), tab === "sensitivity" && /* @__PURE__ */ import_react.default.createElement(
+    ), /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 8, color: p.obligatory ? "#f7768e" : p.yr === effectiveExerciseYear ? "#7aa2f7" : "#a9b1d6", marginLeft: "auto", fontFamily: F } }, p.obligatory ? "OBLIG" : p.yr === effectiveExerciseYear ? "\u25C0 EXIT" : "OPT"))), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 10, borderTop: "1px solid #292e42", paddingTop: 10 } }, /* @__PURE__ */ import_react.default.createElement(Inp, { label: "Ordinary Income Tax Rate", value: taxRate, onChange: setTaxRate, unit: "%", help: `${taxRate}% \xB7 std JP corp (23.2%) + local + defense surtax. Stream 2 (tax shield).`, step: 0.01 }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "PO Disposal Gain Tax Rate", value: capGainsTaxRate, onChange: setCapGainsTaxRate, unit: "%", help: "Tax on (PO price \u2212 depreciated book value) at exit. Japan has NO separate capital gains regime for TK proceeds \u2014 per NTA Circular 36\u30FB37\u5171-21, gains are ordinary income. Corporate TK investors: 30.62% (default). Individual TK investors: progressive up to 55% (\u96D1\u6240\u5F97). Non-residents: 20.42% withholding.", step: 0.01 }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "US Treasury Yield", value: treasuryYield, onChange: setTreasuryYield, unit: "%", step: 0.01 }), /* @__PURE__ */ import_react.default.createElement(Inp, { label: "JP Tax on Foreign Interest", value: foreignInterestTaxPct, onChange: setForeignInterestTaxPct, unit: "%", step: 0.01, help: "JP SME corp rate ~27%, large corp 30.62%. No preferential rate for corps on foreign interest. US charges 0% (Portfolio Interest Exemption, IRC \xA7871h)." }), /* @__PURE__ */ import_react.default.createElement(Slider, { label: "Special Depreciation (Yr1)", value: specialDeprPct, onChange: (v) => setSpecialDeprPct(Math.min(v, flagInfo.specialMax)), min: 0, max: flagInfo.specialMax, step: 1, unit: "%", help: `MLIT advanced vessels: ${flagInfo.specialMin}\u2013${flagInfo.specialMax}% for ${flagInfo.label}` }), isSecondHand && specialDeprPct > 0 && /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "5px 8px", borderRadius: 4, background: "rgba(247,118,142,0.08)", border: "1px solid #f7768e44", fontSize: 10, color: "#f7768e", marginTop: -6, marginBottom: 8 } }, "\u26A0 Special depreciation (MLIT certified advanced vessel \u512A\u826F\u8239\u8236) normally applies only to ", /* @__PURE__ */ import_react.default.createElement("strong", null, "newbuildings"), ". Second-hand vessels do not qualify unless specially certified. Verify with tax counsel before applying.")))), tab === "sensitivity" && /* @__PURE__ */ import_react.default.createElement(import_react.default.Fragment, null, /* @__PURE__ */ import_react.default.createElement(
       SensitivityTab,
       {
         R,
@@ -22904,7 +23377,10 @@
           specialDeprPct,
           treasuryYield,
           effectiveExerciseYear,
-          poPriceMil: R.poPriceMil
+          poPriceMil: R.poPriceMil,
+          jpyUsdRate,
+          jpyUsdBase: JPY_USD_BASE,
+          fxFactor: JPY_USD_BASE / jpyUsdRate
         },
         heatXVar,
         setHeatXVar,
@@ -22917,6 +23393,7 @@
           else if (heatXVar === "taxRate") setTaxRate(cell.xVal);
           else if (heatXVar === "vesselPrice") setVesselPrice(cell.xVal);
           else if (heatXVar === "specialDeprPct") setSpecialDeprPct(cell.xVal);
+          else if (heatXVar === "jpyUsdRate") setJpyUsdRate(cell.xVal);
           else if (heatXVar === "poPremiumPct") {
             const remBal = Math.max(0, R.VP - R.VP / amortYrs * effectiveExerciseYear);
             const newPoPriceMil = remBal * (1 + cell.xVal / 100);
@@ -22929,6 +23406,7 @@
           else if (heatYVar === "taxRate") setTaxRate(cell.yVal);
           else if (heatYVar === "vesselPrice") setVesselPrice(cell.yVal);
           else if (heatYVar === "specialDeprPct") setSpecialDeprPct(cell.yVal);
+          else if (heatYVar === "jpyUsdRate") setJpyUsdRate(cell.yVal);
           else if (heatYVar === "poPremiumPct") {
             const remBal = Math.max(0, R.VP - R.VP / amortYrs * effectiveExerciseYear);
             const newPoPriceMil = remBal * (1 + cell.yVal / 100);
@@ -22938,7 +23416,43 @@
           setTab("deal");
         }
       }
-    ), tab === "scenarios" && /* @__PURE__ */ import_react.default.createElement(
+    ), /* @__PURE__ */ import_react.default.createElement("div", { style: { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginTop: 14 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: "#565f89", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12, fontFamily: F } }, "\u2699 Deal Optimizer \u2014 find inputs for a target IRR"), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" } }, /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement("label", { style: { display: "block", fontSize: 10, color: "#7aa2f7", textTransform: "uppercase", marginBottom: 4, fontFamily: F, fontWeight: 600 } }, "Target IRR (%)"), /* @__PURE__ */ import_react.default.createElement(
+      "input",
+      {
+        type: "number",
+        value: optTarget,
+        onChange: (e) => setOptTarget(parseFloat(e.target.value) || 0),
+        min: 0,
+        max: 20,
+        step: 0.5,
+        style: { width: 100, padding: "7px 8px", borderRadius: 5, border: "1px solid #3b4261", background: "#16161e", color: "#c0caf5", fontSize: 14, fontFamily: F }
+      }
+    )), /* @__PURE__ */ import_react.default.createElement(
+      "button",
+      {
+        onClick: runOptimizer,
+        style: { padding: "8px 18px", borderRadius: 6, border: "1px solid #7aa2f7", background: "rgba(122,162,247,0.15)", color: "#7aa2f7", fontSize: 12, fontFamily: F, fontWeight: 700, cursor: "pointer" }
+      },
+      "Find Limits"
+    ), optResult && /* @__PURE__ */ import_react.default.createElement(import_react.default.Fragment, null, /* @__PURE__ */ import_react.default.createElement("div", { style: { background: "#16161e", borderRadius: 8, padding: "10px 16px", border: "1px solid #292e42", minWidth: 180 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#565f89", textTransform: "uppercase", fontFamily: F } }, "Max PO Premium"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 18, fontWeight: 700, color: "#e0af68", fontFamily: F } }, typeof optResult.maxPoPct === "number" ? optResult.maxPoPct.toFixed(1) + "%" : String(optResult.maxPoPct)), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 9, color: "#565f89", marginTop: 2 } }, "highest PO premium keeping IRR \u2265 ", optTarget, "%"), typeof optResult.maxPoPct === "number" && /* @__PURE__ */ import_react.default.createElement(
+      "button",
+      {
+        onClick: () => {
+          const remBal = Math.max(0, vesselPrice * 1e6 - vesselPrice * 1e6 / amortYrs * effectiveExerciseYear);
+          const newPoPriceMil = remBal * (1 + optResult.maxPoPct / 100);
+          setPoPremium((newPoPriceMil - remBal) / 1e6);
+        },
+        style: { marginTop: 6, padding: "3px 10px", borderRadius: 4, border: "1px solid #e0af68", background: "transparent", color: "#e0af68", fontSize: 10, fontFamily: F, cursor: "pointer" }
+      },
+      "Apply \u2192"
+    )), /* @__PURE__ */ import_react.default.createElement("div", { style: { background: "#16161e", borderRadius: 8, padding: "10px 16px", border: "1px solid #292e42", minWidth: 180 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#565f89", textTransform: "uppercase", fontFamily: F } }, "Min Equity Spread"), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 18, fontWeight: 700, color: "#7aa2f7", fontFamily: F } }, typeof optResult.maxSpread === "number" ? optResult.maxSpread.toFixed(0) + " bps" : String(optResult.maxSpread)), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 9, color: "#565f89", marginTop: 2 } }, "minimum spread needed to hit IRR \u2265 ", optTarget, "%"), typeof optResult.maxSpread === "number" && /* @__PURE__ */ import_react.default.createElement(
+      "button",
+      {
+        onClick: () => setSpreadBps(Math.round(optResult.maxSpread)),
+        style: { marginTop: 6, padding: "3px 10px", borderRadius: 4, border: "1px solid #7aa2f7", background: "transparent", color: "#7aa2f7", fontSize: 10, fontFamily: F, cursor: "pointer" }
+      },
+      "Apply \u2192"
+    )))))), tab === "scenarios" && /* @__PURE__ */ import_react.default.createElement(
       ScenariosTab,
       {
         scenarios,
@@ -23022,6 +23536,32 @@
           setTreasuryYield(i.treasuryYield);
           setTab("deal");
         }
+      }
+    ), tab === "mc" && /* @__PURE__ */ import_react.default.createElement(
+      MonteCarloTab,
+      {
+        baseInputs: {
+          vesselPrice,
+          debtPct,
+          amortYrs,
+          sofrRate,
+          spreadBps,
+          jpyBaseRate,
+          bankSpreadBps,
+          swapCostBps,
+          saleCommission,
+          bbcCommission,
+          taxRate,
+          capGainsTaxRate,
+          foreignInterestTaxPct,
+          usefulLife,
+          specialDeprPct,
+          treasuryYield,
+          effectiveExerciseYear,
+          poPriceMil: R.poPriceMil,
+          fxFactor: JPY_USD_BASE / jpyUsdRate
+        },
+        R
       }
     ), tab === "depr" && /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: C }, H("#bb9af7", `Depreciation Scale \u2014 ${vType.label}${isSecondHand ? ` (Second-Hand, ${vesselAgeYrs}yr old)` : " (Newbuilding)"}`), isSecondHand && /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "6px 10px", borderRadius: 5, background: "rgba(224,175,104,0.08)", border: "1px solid #e0af6855", marginBottom: 10, fontSize: 10, color: "#e0af68", lineHeight: 1.6 } }, /* @__PURE__ */ import_react.default.createElement("strong", null, "Second-Hand vessel:"), " NTA MOF Art. 3 remaining useful life = ", /* @__PURE__ */ import_react.default.createElement("strong", null, usefulLife, " yr"), " (full new life = ", newbuildingLife, " yr, age = ", vesselAgeYrs, " yr). Depreciation schedule below covers only the ", usefulLife, "-yr remaining life, starting from the full vessel purchase price."), /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "8px 10px", borderRadius: 5, background: "#1e2030", marginBottom: 12, fontSize: 10, color: "#a9b1d6", lineHeight: 1.6 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68", fontWeight: 700 } }, "DB (\u5B9A\u7387\u6CD5)"), " applies ", /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68" } }, "2 \xF7 useful life"), " as a rate to the ", /* @__PURE__ */ import_react.default.createElement("em", null, "remaining"), " book value each year \u2014 front loads depreciation. Switches to ", /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#9ece6a", fontWeight: 700 } }, "SL (\u5B9A\u984D\u6CD5)"), " the moment straight line on remaining balance beats DB, per MOF post FY2012 rules. The MOF only sets the useful life; this schedule is the computed output.", isSecondHand && /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68" } }, " For second-hand: useful life = max(2, \u230A(newLife \u2212 age) + age\xD70.2\u230B) per MOF Ord. Art. 3 (\u8010\u7528\u5E74\u6570\u7701\u4EE4 \u7B2C3\u6761).")), /* @__PURE__ */ import_react.default.createElement(Slider, { label: "Special Depreciation Rate", value: specialDeprPct, onChange: (v) => setSpecialDeprPct(Math.min(v, flagInfo.specialMax)), min: 0, max: flagInfo.specialMax, step: 1, unit: "%", help: `${flagInfo.specialMin}\u2013${flagInfo.specialMax}% for ${flagInfo.label} \xB7 slide to see how Yr1 bonus changes the IRR` }), isSecondHand && specialDeprPct > 0 && /* @__PURE__ */ import_react.default.createElement("div", { style: { padding: "5px 8px", borderRadius: 4, background: "rgba(247,118,142,0.08)", border: "1px solid #f7768e44", fontSize: 10, color: "#f7768e", marginTop: -8, marginBottom: 10 } }, "\u26A0 Special depreciation (\u512A\u826F\u8239\u8236) is for MLIT-certified newbuildings only. Verify applicability for second-hand vessels with tax counsel."), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "flex", gap: 12, marginBottom: 12, fontSize: 11 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { display: "flex", alignItems: "center", gap: 4 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { width: 12, height: 8, borderRadius: 2, background: "#7aa2f7", display: "inline-block" } }), " Ordinary"), specialDeprPct > 0 && /* @__PURE__ */ import_react.default.createElement("span", { style: { display: "flex", alignItems: "center", gap: 4 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { width: 12, height: 8, borderRadius: 2, background: "#bb9af7", display: "inline-block" } }), " Special")), (() => {
       const mx = Math.max(...R.depr.map((d) => d.total));
