@@ -22579,6 +22579,8 @@
     const canvasRef = import_react.default.useRef(null);
     const containerRef = import_react.default.useRef(null);
     const [width, setWidth] = import_react.default.useState(600);
+    const [hoveredRow, setHoveredRow] = import_react.default.useState(null);
+    const [tooltipPos, setTooltipPos] = import_react.default.useState({ x: 0, y: 0 });
     import_react.default.useEffect(() => {
       if (!containerRef.current) return;
       setWidth(containerRef.current.offsetWidth);
@@ -22586,74 +22588,155 @@
       ro.observe(containerRef.current);
       return () => ro.disconnect();
     }, []);
+    const irrBps = (R.blendedIRR ?? 0) * 1e4;
+    const netProfit = R.jolcoProfit;
+    const totalStreams = R.totalStream1 + R.totalStream2 + R.totalStream3;
+    const mkBps = (stream) => totalStreams !== 0 ? irrBps * (stream / totalStreams) : 0;
+    const bars = [
+      {
+        label: "\u2460 Hire Spread",
+        sub: "Charter cash yield, net of brokerage & debt service",
+        bps: mkBps(R.totalStream1),
+        dollar: R.totalStream1,
+        color: "#9ece6a"
+      },
+      {
+        label: "\u2461 Tax Shield",
+        sub: "Depreciation losses \u2192 reduced JP investor tax",
+        bps: mkBps(R.totalStream2),
+        dollar: R.totalStream2,
+        color: "#bb9af7"
+      },
+      {
+        label: "\u2462 Residual/PO",
+        sub: "PO exercise proceeds, net of remaining debt & cap gains tax",
+        bps: mkBps(R.totalStream3),
+        dollar: R.totalStream3,
+        color: "#e0af68"
+      },
+      {
+        label: "Blended IRR",
+        sub: "All three streams combined",
+        bps: irrBps,
+        dollar: netProfit,
+        color: "#7aa2f7",
+        isTotal: true
+      }
+    ];
+    const PAD = { L: 140, R: 90, T: 14, B: 20 };
+    const barH = 24, gap = 14;
+    const canvasH = bars.length * (barH + gap) + PAD.T + PAD.B + 10;
     import_react.default.useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       const W = canvas.width, H = canvas.height;
-      const padL = 130, padR = 80, padT = 18, padB = 24;
+      const { L, R: padR, T, B } = PAD;
+      const chartW = W - L - padR;
       ctx.clearRect(0, 0, W, H);
       ctx.fillStyle = "#16161e";
       ctx.fillRect(0, 0, W, H);
-      const baseIRR = R.blendedIRR ?? 0;
-      const total = R.totalStream1 + R.totalStream2 + R.totalStream3;
-      if (total <= 0 || baseIRR <= 0) {
-        ctx.fillStyle = "#565f89";
-        ctx.font = "11px 'Inter', sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText("No positive IRR to attribute", W / 2, H / 2);
-        return;
-      }
-      const stream1Share = R.totalStream1 / total;
-      const stream2Share = R.totalStream2 / total;
-      const stream3Share = R.totalStream3 / total;
-      const irrBps = baseIRR * 1e4;
-      const bars = [
-        { label: "\u2460 Hire Spread", bps: irrBps * stream1Share, color: "#9ece6a" },
-        { label: "\u2461 Tax Shield", bps: irrBps * stream2Share, color: "#bb9af7" },
-        { label: "\u2462 Residual/PO", bps: irrBps * stream3Share, color: "#e0af68" },
-        { label: "Blended IRR", bps: irrBps, color: "#7aa2f7", isTotal: true }
-      ];
-      const maxBps = Math.max(...bars.map((b) => b.bps)) * 1.15;
-      const xScale = (v) => padL + v / maxBps * (W - padL - padR);
-      const barH = 22, gap = 12;
-      const totalH = bars.length * (barH + gap);
-      const startY = padT + (H - padT - padB - totalH) / 2;
-      bars.forEach((bar, i) => {
-        const y = startY + i * (barH + gap);
-        const barW = Math.max(2, xScale(bar.bps) - padL);
-        if (bar.isTotal) {
-          ctx.fillStyle = "#292e42";
-          ctx.fillRect(padL, y, W - padL - padR, barH);
-        }
-        ctx.fillStyle = bar.color + (bar.isTotal ? "" : "cc");
-        ctx.fillRect(padL, y, barW, barH);
-        ctx.fillStyle = "#a9b1d6";
-        ctx.font = `${bar.isTotal ? "bold " : ""}11px 'Inter', sans-serif`;
-        ctx.textAlign = "right";
-        ctx.textBaseline = "middle";
-        ctx.fillText(bar.label, padL - 6, y + barH / 2);
-        ctx.fillStyle = bar.isTotal ? "#ffffff" : "#c0caf5";
-        ctx.font = `bold 11px 'JetBrains Mono', monospace`;
-        ctx.textAlign = "left";
-        ctx.fillText(bar.bps.toFixed(0) + " bps", xScale(bar.bps) + 5, y + barH / 2);
-      });
+      const allBps = bars.map((b) => b.bps);
+      const xMin = Math.min(0, ...allBps) * 1.12;
+      const xMax = Math.max(0, ...allBps) * 1.12 || 100;
+      const xRange = xMax - xMin;
+      const xScale = (v) => L + (v - xMin) / xRange * chartW;
+      const zeroX = xScale(0);
       ctx.strokeStyle = "#3b4261";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(padL, padT);
-      ctx.lineTo(padL, H - padB);
+      ctx.moveTo(zeroX, T - 4);
+      ctx.lineTo(zeroX, H - B + 4);
       ctx.stroke();
-    }, [R, width]);
-    return /* @__PURE__ */ import_react.default.createElement("div", { ref: containerRef, style: { width: "100%" } }, /* @__PURE__ */ import_react.default.createElement(
+      bars.forEach((bar, i) => {
+        const y = T + i * (barH + gap);
+        const cy = y + barH / 2;
+        const isHovered = hoveredRow === i;
+        const bx = xScale(bar.bps);
+        if (isHovered) {
+          ctx.fillStyle = "rgba(122,162,247,0.07)";
+          ctx.fillRect(0, y - 4, W, barH + 8);
+        }
+        ctx.fillStyle = isHovered ? "#c0caf5" : "#a9b1d6";
+        ctx.font = `${bar.isTotal ? "bold " : isHovered ? "bold " : ""}11px 'Inter', sans-serif`;
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        ctx.fillText(bar.label, L - 8, cy);
+        if (bar.isTotal) {
+          ctx.fillStyle = "#292e42";
+          ctx.fillRect(zeroX, y, Math.max(1, bx - zeroX), barH);
+        }
+        const barLeft = Math.min(zeroX, bx);
+        const barWidth = Math.max(2, Math.abs(bx - zeroX));
+        ctx.fillStyle = bar.bps < 0 ? "#f7768e" + (bar.isTotal ? "" : "cc") : bar.color + (bar.isTotal ? "" : "cc");
+        ctx.fillRect(barLeft, y, barWidth, barH);
+        ctx.fillStyle = bar.isTotal ? "#ffffff" : isHovered ? "#ffffff" : "#c0caf5";
+        ctx.font = `bold ${bar.isTotal ? 12 : 11}px 'JetBrains Mono', monospace`;
+        ctx.textBaseline = "middle";
+        if (bar.bps >= 0) {
+          ctx.textAlign = "left";
+          ctx.fillText(bar.bps.toFixed(0) + " bps", bx + 5, cy);
+        } else {
+          ctx.textAlign = "right";
+          ctx.fillText(bar.bps.toFixed(0) + " bps", barLeft - 4, cy);
+        }
+        const dollarLabel = "$" + (bar.dollar / 1e6).toFixed(1) + "M";
+        if (barWidth > 50) {
+          ctx.fillStyle = "rgba(0,0,0,0.45)";
+          ctx.font = "9px 'JetBrains Mono', monospace";
+          ctx.textAlign = "center";
+          ctx.fillText(dollarLabel, barLeft + barWidth / 2, cy);
+        }
+      });
+      ctx.fillStyle = "#3b4261";
+      ctx.font = "8px 'JetBrains Mono', monospace";
+      ctx.textAlign = "center";
+      const tickStep = xRange > 4e3 ? 500 : xRange > 1500 ? 200 : 100;
+      for (let v = Math.ceil(xMin / tickStep) * tickStep; v <= xMax; v += tickStep) {
+        const x = xScale(v);
+        if (x < L || x > W - padR) continue;
+        ctx.fillStyle = "#3b4261";
+        ctx.fillText(v === 0 ? "0" : v + "", x, H - 4);
+      }
+    }, [R, width, hoveredRow]);
+    const handleMouseMove = (e) => {
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+      const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+      const row = Math.floor((my - PAD.T) / (barH + gap));
+      if (row >= 0 && row < bars.length) {
+        setHoveredRow(row);
+        setTooltipPos({ x: e.clientX, y: e.clientY });
+      } else {
+        setHoveredRow(null);
+      }
+    };
+    const hovered = hoveredRow != null ? bars[hoveredRow] : null;
+    return /* @__PURE__ */ import_react.default.createElement("div", { ref: containerRef, style: { width: "100%", position: "relative" } }, /* @__PURE__ */ import_react.default.createElement(
       "canvas",
       {
         ref: canvasRef,
         width,
-        height: 160,
-        style: { width: "100%", height: "auto", display: "block", borderRadius: 6 }
+        height: canvasH,
+        style: { width: "100%", height: "auto", display: "block", borderRadius: 6, cursor: "crosshair" },
+        onMouseMove: handleMouseMove,
+        onMouseLeave: () => setHoveredRow(null)
       }
-    ));
+    ), hovered && /* @__PURE__ */ import_react.default.createElement("div", { style: {
+      position: "fixed",
+      left: tooltipPos.x + 14,
+      top: tooltipPos.y - 10,
+      background: "#1a1b26",
+      border: "1px solid #3b4261",
+      borderRadius: 8,
+      padding: "10px 14px",
+      fontSize: 11,
+      fontFamily: F,
+      zIndex: 999,
+      pointerEvents: "none",
+      minWidth: 230,
+      boxShadow: "0 4px 20px rgba(0,0,0,0.5)"
+    } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontWeight: 700, color: "#c0caf5", marginBottom: 4, fontSize: 12 } }, hovered.label), /* @__PURE__ */ import_react.default.createElement("div", { style: { color: "#565f89", fontSize: 10, marginBottom: 8 } }, hovered.sub), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "auto 1fr", gap: "3px 10px" } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#565f89" } }, "Dollar return"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: hovered.dollar >= 0 ? "#9ece6a" : "#f7768e", fontWeight: 700 } }, hovered.dollar >= 0 ? "+" : "", "$", (hovered.dollar / 1e6).toFixed(2), "M"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#565f89" } }, "IRR contribution"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: hovered.bps >= 0 ? "#9ece6a" : "#f7768e", fontWeight: 700 } }, hovered.bps >= 0 ? "+" : "", hovered.bps.toFixed(0), " bps"), !hovered.isTotal && /* @__PURE__ */ import_react.default.createElement(import_react.default.Fragment, null, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#565f89" } }, "% of total profit"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#a9b1d6" } }, totalStreams !== 0 ? (hovered.dollar / totalStreams * 100).toFixed(1) + "%" : "\u2014")))));
   }
   var STATE_VERSION = 1;
   function encodeState(s) {
