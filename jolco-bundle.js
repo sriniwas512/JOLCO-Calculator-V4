@@ -21791,18 +21791,19 @@
     return parseFloat(((lo + hi) / 2).toFixed(2));
   }
   var TORNADO_SHOCKS = [
-    { key: "spreadBps", label: "Equity Spread", shock: 100, isPct: false },
-    { key: "poPremiumPct", label: "PO Premium", shock: 5, isPct: true },
-    { key: "debtPct", label: "Leverage (Debt %)", shock: 5, isPct: false },
-    { key: "sofrRate", label: "SOFR Rate", shock: 0.5, isPct: false },
-    { key: "vesselPrice", label: "Vessel Price", pctShock: 0.1, isPct: false },
-    { key: "taxRate", label: "Investor Tax Rate", shock: 2, isPct: false },
-    { key: "specialDeprPct", label: "Special Depr", shock: 5, isPct: false }
+    { key: "spreadBps", label: "Equity Spread", shock: 100, isPct: false, unit: "bps", shockDesc: "\xB1100 bps" },
+    { key: "poPremiumPct", label: "PO Premium", shock: 5, isPct: true, unit: "%", shockDesc: "\xB15 pp over balance" },
+    { key: "debtPct", label: "Leverage (Debt %)", shock: 5, isPct: false, unit: "%", shockDesc: "\xB15 pp (e.g. 70% \u2192 75%)" },
+    { key: "sofrRate", label: "SOFR Rate", shock: 0.5, isPct: false, unit: "%", shockDesc: "\xB150 bps (e.g. 4.3% \u2192 4.8%)" },
+    { key: "vesselPrice", label: "Vessel Price", pctShock: 0.1, isPct: false, unit: "$M", shockDesc: "\xB110% of price" },
+    { key: "taxRate", label: "Investor Tax Rate", shock: 2, isPct: false, unit: "%", shockDesc: "\xB12 pp (e.g. 30.62% \u2192 32.62%)" },
+    { key: "specialDeprPct", label: "Special Depr %", shock: 5, isPct: false, unit: "%", shockDesc: "\xB15 pp (e.g. 30% \u2192 35%)" }
   ];
   function computeTornadoData(baseInputs, baseIRR) {
     const results = [];
     for (const s of TORNADO_SHOCKS) {
       const shockAmt = s.pctShock ? baseInputs.vesselPrice * s.pctShock : s.shock;
+      const baseVal = s.isPct ? baseInputs.poPremiumPct ?? 0 : s.pctShock ? baseInputs.vesselPrice : baseInputs[s.key];
       const irrs = [1, -1].map((sign) => {
         const inp = { ...baseInputs };
         if (s.isPct) {
@@ -21823,7 +21824,21 @@
       const lo = irrDown != null && irrUp != null ? Math.min(irrDown, irrUp) : null;
       const hi = irrDown != null && irrUp != null ? Math.max(irrDown, irrUp) : null;
       const impact = lo != null && hi != null ? hi - lo : 0;
-      results.push({ key: s.key, label: s.label, lo, hi, impact, irrUp, irrDown });
+      results.push({
+        key: s.key,
+        label: s.label,
+        lo,
+        hi,
+        impact,
+        irrUp,
+        irrDown,
+        shockDesc: s.shockDesc,
+        unit: s.unit,
+        baseVal,
+        upVal: baseVal + shockAmt,
+        downVal: baseVal - shockAmt,
+        shockAmt
+      });
     }
     return results.sort((a, b) => b.impact - a.impact);
   }
@@ -22268,73 +22283,132 @@
     const canvasRef = import_react.default.useRef(null);
     const containerRef = import_react.default.useRef(null);
     const [width, setWidth] = import_react.default.useState(700);
+    const [hoveredRow, setHoveredRow] = import_react.default.useState(null);
+    const [tooltipPos, setTooltipPos] = import_react.default.useState({ x: 0, y: 0 });
+    const PAD = { L: 140, R: 70, T: 22, B: 26 };
     import_react.default.useEffect(() => {
-      if (containerRef.current) setWidth(containerRef.current.offsetWidth);
+      if (!containerRef.current) return;
+      setWidth(containerRef.current.offsetWidth);
+      const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
+      ro.observe(containerRef.current);
+      return () => ro.disconnect();
     }, []);
     import_react.default.useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas || !data || data.length === 0) return;
       const ctx = canvas.getContext("2d");
       const W = canvas.width, H = canvas.height;
-      const padL = 120, padR = 60, padT = 20, padB = 20;
-      const chartW = W - padL - padR;
-      const rowH = (H - padT - padB) / data.length;
+      const { L, R, T, B } = PAD;
+      const chartW = W - L - R;
+      const rowH = (H - T - B) / data.length;
       ctx.clearRect(0, 0, W, H);
       ctx.fillStyle = "#16161e";
       ctx.fillRect(0, 0, W, H);
       const allIRRs = data.flatMap((d) => [d.lo, d.hi, baseIRR]).filter((v) => v != null);
       if (allIRRs.length === 0) return;
-      const xMin = Math.min(...allIRRs) - 0.01;
-      const xMax = Math.max(...allIRRs) + 0.01;
-      const xScale = (irr) => padL + (irr - xMin) / (xMax - xMin) * chartW;
+      const xMin = Math.min(...allIRRs) - 5e-3;
+      const xMax = Math.max(...allIRRs) + 5e-3;
+      const xScale = (irr) => L + (irr - xMin) / (xMax - xMin) * chartW;
       const baseX = xScale(baseIRR ?? 0);
       ctx.strokeStyle = "#7aa2f7";
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 3]);
       ctx.beginPath();
-      ctx.moveTo(baseX, padT);
-      ctx.lineTo(baseX, H - padB);
+      ctx.moveTo(baseX, T);
+      ctx.lineTo(baseX, H - B);
       ctx.stroke();
       ctx.setLineDash([]);
       data.forEach((d, i) => {
-        const cy = padT + i * rowH + rowH / 2;
-        const barH = Math.max(4, rowH * 0.55);
-        ctx.fillStyle = "#a9b1d6";
-        ctx.font = "11px 'Inter', sans-serif";
+        const cy = T + i * rowH + rowH / 2;
+        const barH = Math.max(8, rowH * 0.52);
+        const isHovered = hoveredRow === i;
+        if (isHovered) {
+          ctx.fillStyle = "rgba(122,162,247,0.06)";
+          ctx.fillRect(0, T + i * rowH, W, rowH);
+        }
+        ctx.fillStyle = isHovered ? "#c0caf5" : "#a9b1d6";
+        ctx.font = `${isHovered ? "bold " : ""}11px 'Inter', sans-serif`;
         ctx.textAlign = "right";
         ctx.textBaseline = "middle";
-        ctx.fillText(d.label, padL - 6, cy);
+        ctx.fillText(d.label, L - 8, cy);
+        ctx.fillStyle = "#565f89";
+        ctx.font = "9px 'JetBrains Mono', monospace";
+        ctx.textAlign = "right";
+        ctx.fillText(d.shockDesc ?? "", L - 8, cy + 9);
         if (d.lo == null || d.hi == null) return;
         const loX = xScale(d.lo), hiX = xScale(d.hi);
-        ctx.fillStyle = "#f7768e";
+        const alpha = isHovered ? "ff" : "cc";
+        ctx.fillStyle = "#f7768e" + alpha;
         ctx.fillRect(Math.min(loX, baseX), cy - barH / 2, Math.abs(baseX - Math.min(loX, baseX)), barH);
-        ctx.fillStyle = "#9ece6a";
-        ctx.fillRect(baseX, cy - barH / 2, Math.abs(hiX - baseX), barH);
-        ctx.fillStyle = "#c0caf5";
-        ctx.font = "9px 'JetBrains Mono', monospace";
+        ctx.fillStyle = "#9ece6a" + alpha;
+        ctx.fillRect(baseX, cy - barH / 2, Math.max(1, Math.abs(hiX - baseX)), barH);
+        ctx.fillStyle = isHovered ? "#ffffff" : "#c0caf5";
+        ctx.font = `${isHovered ? "bold " : ""}9px 'JetBrains Mono', monospace`;
         ctx.textAlign = "right";
         ctx.fillText((d.lo * 100).toFixed(1) + "%", loX - 3, cy);
         ctx.textAlign = "left";
         ctx.fillText((d.hi * 100).toFixed(1) + "%", hiX + 3, cy);
+        const impactBps = ((d.hi - d.lo) * 1e4).toFixed(0);
+        ctx.fillStyle = isHovered ? "#e0af68" : "#565f89";
+        ctx.font = `${isHovered ? "bold " : ""}9px 'JetBrains Mono', monospace`;
+        ctx.textAlign = "left";
+        ctx.fillText(`\u0394${impactBps}bps`, W - R + 4, cy);
       });
       ctx.fillStyle = "#565f89";
       ctx.font = "9px 'JetBrains Mono', monospace";
       ctx.textAlign = "center";
-      for (let v = Math.ceil(xMin * 100); v <= Math.floor(xMax * 100); v += 2) {
+      for (let v = Math.ceil(xMin * 100); v <= Math.floor(xMax * 100); v++) {
         const x = xScale(v / 100);
-        if (x < padL || x > W - padR) continue;
+        if (x < L || x > W - R) continue;
         ctx.fillText(v + "%", x, H - 5);
       }
-    }, [data, baseIRR, width]);
-    return /* @__PURE__ */ import_react.default.createElement("div", { ref: containerRef, style: { width: "100%" } }, /* @__PURE__ */ import_react.default.createElement(
+      ctx.fillStyle = "#7aa2f7";
+      ctx.font = "9px 'JetBrains Mono', monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("Base", baseX, T - 6);
+    }, [data, baseIRR, width, hoveredRow]);
+    const handleMouseMove = (e) => {
+      if (!data || data.length === 0) return;
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+      const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+      const { T, B } = PAD;
+      const rowH = (canvas.height - T - B) / data.length;
+      const row = Math.floor((my - T) / rowH);
+      if (row >= 0 && row < data.length) {
+        setHoveredRow(row);
+        setTooltipPos({ x: e.clientX, y: e.clientY });
+      } else {
+        setHoveredRow(null);
+      }
+    };
+    const hoveredData = hoveredRow != null ? data[hoveredRow] : null;
+    const fmtVal = (v, unit) => unit === "bps" ? Math.round(v) + " bps" : unit === "$M" ? "$" + v.toFixed(1) + "M" : v.toFixed(2) + (unit === "%" ? "%" : "");
+    return /* @__PURE__ */ import_react.default.createElement("div", { ref: containerRef, style: { width: "100%", position: "relative" } }, /* @__PURE__ */ import_react.default.createElement(
       "canvas",
       {
         ref: canvasRef,
         width,
-        height: Math.max(220, (data || []).length * 28 + 40),
-        style: { width: "100%", height: "auto", display: "block" }
+        height: Math.max(240, (data || []).length * 38 + 50),
+        style: { width: "100%", height: "auto", display: "block", cursor: "crosshair" },
+        onMouseMove: handleMouseMove,
+        onMouseLeave: () => setHoveredRow(null)
       }
-    ));
+    ), hoveredData && /* @__PURE__ */ import_react.default.createElement("div", { style: {
+      position: "fixed",
+      left: tooltipPos.x + 14,
+      top: tooltipPos.y - 10,
+      background: "#1a1b26",
+      border: "1px solid #3b4261",
+      borderRadius: 8,
+      padding: "10px 14px",
+      fontSize: 11,
+      fontFamily: F,
+      zIndex: 999,
+      pointerEvents: "none",
+      minWidth: 220,
+      boxShadow: "0 4px 20px rgba(0,0,0,0.5)"
+    } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontWeight: 700, color: "#c0caf5", marginBottom: 6, fontSize: 12 } }, hoveredData.label), /* @__PURE__ */ import_react.default.createElement("div", { style: { color: "#565f89", marginBottom: 8, fontSize: 10 } }, hoveredData.shockDesc), /* @__PURE__ */ import_react.default.createElement("div", { style: { display: "grid", gridTemplateColumns: "auto 1fr", gap: "3px 10px" } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#565f89" } }, "Base"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#7aa2f7" } }, fmtVal(hoveredData.baseVal, hoveredData.unit)), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#9ece6a" } }, "Shocked up"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#9ece6a" } }, "\u2192 IRR ", hoveredData.irrUp != null ? (hoveredData.irrUp * 100).toFixed(2) + "%" : "\u2014"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#f7768e" } }, "Shocked down"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#f7768e" } }, "\u2192 IRR ", hoveredData.irrDown != null ? (hoveredData.irrDown * 100).toFixed(2) + "%" : "\u2014"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68" } }, "IRR range"), /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#e0af68", fontWeight: 700 } }, "\u0394", ((hoveredData.impact ?? 0) * 1e4).toFixed(0), " bps"))));
   }
   function CumulativeCFChart({ equityCF, equityCF_noTax }) {
     const canvasRef = import_react.default.useRef(null);
@@ -23698,7 +23772,7 @@
       { l: "Equity IRR", v: pct(R.equityIRR), s: "Hire + Residual only", c: "#e0af68" },
       { l: "Blended IRR", v: pct(R.blendedIRR), s: "Incl. tax shield", c: R.spread > 0 ? "#9ece6a" : "#f7768e" },
       { l: "MoIC", v: R.totalEquityDeployed > 0 ? $d((R.totalEquityDeployed + R.jolcoProfit) / R.totalEquityDeployed, 2) + "x" : "\u2014", s: "Total returned / equity deployed", c: "#7aa2f7" }
-    ].map((x, i) => /* @__PURE__ */ import_react.default.createElement("div", { key: i, style: { textAlign: "center", padding: 12, borderRadius: 8, background: "#16161e" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase" } }, x.l), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: x.c, fontFamily: F } }, x.v), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 9, color: "#a9b1d6", marginTop: 2 } }, x.s)))), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 12, padding: 14, borderRadius: 8, background: "#16161e", fontSize: 12, color: "#a9b1d6", lineHeight: 1.7 } }, /* @__PURE__ */ import_react.default.createElement("strong", { style: { color: "#c0caf5" } }, "How to read this:"), " The tax shield column shows tax you ", /* @__PURE__ */ import_react.default.createElement("em", null, "didn't have to pay"), " because depreciation created paper losses. In early years it's positive (you're saving tax). In later years when depreciation runs out, it may go negative (you're now paying more tax than you would without the JOLCO). The net effect over the lease term is shown in the \u03A3 row. All three streams together, timed correctly, give you the IRR."), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 10, padding: 12, borderRadius: 8, background: "rgba(187,154,247,0.06)", border: "1px solid #bb9af733", fontSize: 11, color: "#a9b1d6", lineHeight: 1.6 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#bb9af7", fontWeight: 700 } }, "\u26A0 Tax capacity caveat:"), " The Blended IRR assumes the investor has sufficient taxable income from other sources to fully absorb depreciation losses every year. If the investor's tax capacity is limited in any given year (e.g. they are already in a loss position), the Stream \u2461 benefit will be deferred or lost entirely, and actual returns will be lower than shown.")), /* @__PURE__ */ import_react.default.createElement("div", { style: { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginTop: 16 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#7aa2f7" } }, "\u25CF"), "IRR Sensitivity (Tornado) \u2014 impact of \xB11 shock per variable"), /* @__PURE__ */ import_react.default.createElement(
+    ].map((x, i) => /* @__PURE__ */ import_react.default.createElement("div", { key: i, style: { textAlign: "center", padding: 12, borderRadius: 8, background: "#16161e" } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 10, color: "#a9b1d6", textTransform: "uppercase" } }, x.l), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 23, fontWeight: 700, color: x.c, fontFamily: F } }, x.v), /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 9, color: "#a9b1d6", marginTop: 2 } }, x.s)))), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 12, padding: 14, borderRadius: 8, background: "#16161e", fontSize: 12, color: "#a9b1d6", lineHeight: 1.7 } }, /* @__PURE__ */ import_react.default.createElement("strong", { style: { color: "#c0caf5" } }, "How to read this:"), " The tax shield column shows tax you ", /* @__PURE__ */ import_react.default.createElement("em", null, "didn't have to pay"), " because depreciation created paper losses. In early years it's positive (you're saving tax). In later years when depreciation runs out, it may go negative (you're now paying more tax than you would without the JOLCO). The net effect over the lease term is shown in the \u03A3 row. All three streams together, timed correctly, give you the IRR."), /* @__PURE__ */ import_react.default.createElement("div", { style: { marginTop: 10, padding: 12, borderRadius: 8, background: "rgba(187,154,247,0.06)", border: "1px solid #bb9af733", fontSize: 11, color: "#a9b1d6", lineHeight: 1.6 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#bb9af7", fontWeight: 700 } }, "\u26A0 Tax capacity caveat:"), " The Blended IRR assumes the investor has sufficient taxable income from other sources to fully absorb depreciation losses every year. If the investor's tax capacity is limited in any given year (e.g. they are already in a loss position), the Stream \u2461 benefit will be deferred or lost entirely, and actual returns will be lower than shown.")), /* @__PURE__ */ import_react.default.createElement("div", { style: { background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginTop: 16 } }, /* @__PURE__ */ import_react.default.createElement("div", { style: { fontSize: 13, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 } }, /* @__PURE__ */ import_react.default.createElement("span", { style: { color: "#7aa2f7" } }, "\u25CF"), "IRR Sensitivity \u2014 how much blended IRR moves when each variable is shocked by one typical market move", /* @__PURE__ */ import_react.default.createElement("span", { style: { fontSize: 10, color: "#565f89", fontWeight: 400, marginLeft: 8 } }, "hover a bar for details \xB7 green = variable up helps IRR \xB7 red = variable up hurts IRR")), /* @__PURE__ */ import_react.default.createElement(
       TornadoChart,
       {
         data: computeTornadoData({

@@ -356,19 +356,20 @@ function bisectBreakeven(baseInputs, varKey, target) {
 }
 
 const TORNADO_SHOCKS = [
-  { key: "spreadBps",      label: "Equity Spread",    shock: 100,  isPct: false },
-  { key: "poPremiumPct",   label: "PO Premium",        shock: 5,    isPct: true  },
-  { key: "debtPct",        label: "Leverage (Debt %)", shock: 5,    isPct: false },
-  { key: "sofrRate",       label: "SOFR Rate",         shock: 0.5,  isPct: false },
-  { key: "vesselPrice",    label: "Vessel Price",      pctShock: 0.10, isPct: false },
-  { key: "taxRate",        label: "Investor Tax Rate", shock: 2,    isPct: false },
-  { key: "specialDeprPct", label: "Special Depr",      shock: 5,    isPct: false },
+  { key: "spreadBps",      label: "Equity Spread",     shock: 100,     isPct: false, unit: "bps", shockDesc: "±100 bps" },
+  { key: "poPremiumPct",   label: "PO Premium",         shock: 5,       isPct: true,  unit: "%",   shockDesc: "±5 pp over balance" },
+  { key: "debtPct",        label: "Leverage (Debt %)",  shock: 5,       isPct: false, unit: "%",   shockDesc: "±5 pp (e.g. 70% → 75%)" },
+  { key: "sofrRate",       label: "SOFR Rate",          shock: 0.5,     isPct: false, unit: "%",   shockDesc: "±50 bps (e.g. 4.3% → 4.8%)" },
+  { key: "vesselPrice",    label: "Vessel Price",       pctShock: 0.10, isPct: false, unit: "$M",  shockDesc: "±10% of price" },
+  { key: "taxRate",        label: "Investor Tax Rate",  shock: 2,       isPct: false, unit: "%",   shockDesc: "±2 pp (e.g. 30.62% → 32.62%)" },
+  { key: "specialDeprPct", label: "Special Depr %",     shock: 5,       isPct: false, unit: "%",   shockDesc: "±5 pp (e.g. 30% → 35%)" },
 ];
 
 function computeTornadoData(baseInputs, baseIRR) {
   const results = [];
   for (const s of TORNADO_SHOCKS) {
     const shockAmt = s.pctShock ? baseInputs.vesselPrice * s.pctShock : s.shock;
+    const baseVal = s.isPct ? (baseInputs.poPremiumPct ?? 0) : (s.pctShock ? baseInputs.vesselPrice : baseInputs[s.key]);
     const irrs = [1, -1].map(sign => {
       const inp = { ...baseInputs };
       if (s.isPct) {
@@ -387,7 +388,11 @@ function computeTornadoData(baseInputs, baseIRR) {
     const lo = irrDown != null && irrUp != null ? Math.min(irrDown, irrUp) : null;
     const hi = irrDown != null && irrUp != null ? Math.max(irrDown, irrUp) : null;
     const impact = (lo != null && hi != null) ? hi - lo : 0;
-    results.push({ key: s.key, label: s.label, lo, hi, impact, irrUp, irrDown });
+    results.push({
+      key: s.key, label: s.label, lo, hi, impact, irrUp, irrDown,
+      shockDesc: s.shockDesc, unit: s.unit,
+      baseVal, upVal: baseVal + shockAmt, downVal: baseVal - shockAmt, shockAmt,
+    });
   }
   return results.sort((a, b) => b.impact - a.impact);
 }
@@ -894,9 +899,18 @@ function TornadoChart({ data, baseIRR }) {
   const canvasRef = React.useRef(null);
   const containerRef = React.useRef(null);
   const [width, setWidth] = React.useState(700);
+  const [hoveredRow, setHoveredRow] = React.useState(null);
+  const [tooltipPos, setTooltipPos] = React.useState({ x: 0, y: 0 });
+
+  // Layout constants — kept in sync between draw and hit-test
+  const PAD = { L: 140, R: 70, T: 22, B: 26 };
 
   React.useEffect(() => {
-    if (containerRef.current) setWidth(containerRef.current.offsetWidth);
+    if (!containerRef.current) return;
+    setWidth(containerRef.current.offsetWidth);
+    const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
   }, []);
 
   React.useEffect(() => {
@@ -904,9 +918,9 @@ function TornadoChart({ data, baseIRR }) {
     if (!canvas || !data || data.length === 0) return;
     const ctx = canvas.getContext("2d");
     const W = canvas.width, H = canvas.height;
-    const padL = 120, padR = 60, padT = 20, padB = 20;
-    const chartW = W - padL - padR;
-    const rowH = (H - padT - padB) / data.length;
+    const { L, R, T, B } = PAD;
+    const chartW = W - L - R;
+    const rowH = (H - T - B) / data.length;
 
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = "#16161e";
@@ -914,58 +928,136 @@ function TornadoChart({ data, baseIRR }) {
 
     const allIRRs = data.flatMap(d => [d.lo, d.hi, baseIRR]).filter(v => v != null);
     if (allIRRs.length === 0) return;
-    const xMin = Math.min(...allIRRs) - 0.01;
-    const xMax = Math.max(...allIRRs) + 0.01;
-    const xScale = (irr) => padL + ((irr - xMin) / (xMax - xMin)) * chartW;
+    const xMin = Math.min(...allIRRs) - 0.005;
+    const xMax = Math.max(...allIRRs) + 0.005;
+    const xScale = (irr) => L + ((irr - xMin) / (xMax - xMin)) * chartW;
     const baseX = xScale(baseIRR ?? 0);
 
+    // Base IRR line
     ctx.strokeStyle = "#7aa2f7";
     ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 3]);
-    ctx.beginPath(); ctx.moveTo(baseX, padT); ctx.lineTo(baseX, H - padB); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(baseX, T); ctx.lineTo(baseX, H - B); ctx.stroke();
     ctx.setLineDash([]);
 
     data.forEach((d, i) => {
-      const cy = padT + i * rowH + rowH / 2;
-      const barH = Math.max(4, rowH * 0.55);
+      const cy = T + i * rowH + rowH / 2;
+      const barH = Math.max(8, rowH * 0.52);
+      const isHovered = hoveredRow === i;
 
-      ctx.fillStyle = "#a9b1d6";
-      ctx.font = "11px 'Inter', sans-serif";
+      // Row highlight on hover
+      if (isHovered) {
+        ctx.fillStyle = "rgba(122,162,247,0.06)";
+        ctx.fillRect(0, T + i * rowH, W, rowH);
+      }
+
+      // Label
+      ctx.fillStyle = isHovered ? "#c0caf5" : "#a9b1d6";
+      ctx.font = `${isHovered ? "bold " : ""}11px 'Inter', sans-serif`;
       ctx.textAlign = "right";
       ctx.textBaseline = "middle";
-      ctx.fillText(d.label, padL - 6, cy);
+      ctx.fillText(d.label, L - 8, cy);
+
+      // Shock description (small, under label)
+      ctx.fillStyle = "#565f89";
+      ctx.font = "9px 'JetBrains Mono', monospace";
+      ctx.textAlign = "right";
+      ctx.fillText(d.shockDesc ?? "", L - 8, cy + 9);
 
       if (d.lo == null || d.hi == null) return;
 
       const loX = xScale(d.lo), hiX = xScale(d.hi);
+      const alpha = isHovered ? "ff" : "cc";
 
-      ctx.fillStyle = "#f7768e";
+      // Down bar (red — variable going down hurts IRR)
+      ctx.fillStyle = "#f7768e" + alpha;
       ctx.fillRect(Math.min(loX, baseX), cy - barH / 2, Math.abs(baseX - Math.min(loX, baseX)), barH);
-      ctx.fillStyle = "#9ece6a";
-      ctx.fillRect(baseX, cy - barH / 2, Math.abs(hiX - baseX), barH);
+      // Up bar (green — variable going up helps IRR)
+      ctx.fillStyle = "#9ece6a" + alpha;
+      ctx.fillRect(baseX, cy - barH / 2, Math.max(1, Math.abs(hiX - baseX)), barH);
 
-      ctx.fillStyle = "#c0caf5";
-      ctx.font = "9px 'JetBrains Mono', monospace";
+      // IRR endpoint labels
+      ctx.fillStyle = isHovered ? "#ffffff" : "#c0caf5";
+      ctx.font = `${isHovered ? "bold " : ""}9px 'JetBrains Mono', monospace`;
       ctx.textAlign = "right";
       ctx.fillText((d.lo * 100).toFixed(1) + "%", loX - 3, cy);
       ctx.textAlign = "left";
       ctx.fillText((d.hi * 100).toFixed(1) + "%", hiX + 3, cy);
+
+      // Impact delta label
+      const impactBps = ((d.hi - d.lo) * 10000).toFixed(0);
+      ctx.fillStyle = isHovered ? "#e0af68" : "#565f89";
+      ctx.font = `${isHovered ? "bold " : ""}9px 'JetBrains Mono', monospace`;
+      ctx.textAlign = "left";
+      ctx.fillText(`Δ${impactBps}bps`, W - R + 4, cy);
     });
 
+    // X-axis tick labels
     ctx.fillStyle = "#565f89";
     ctx.font = "9px 'JetBrains Mono', monospace";
     ctx.textAlign = "center";
-    for (let v = Math.ceil(xMin * 100); v <= Math.floor(xMax * 100); v += 2) {
+    for (let v = Math.ceil(xMin * 100); v <= Math.floor(xMax * 100); v++) {
       const x = xScale(v / 100);
-      if (x < padL || x > W - padR) continue;
+      if (x < L || x > W - R) continue;
       ctx.fillText(v + "%", x, H - 5);
     }
-  }, [data, baseIRR, width]);
+
+    // "Base" label above the baseline
+    ctx.fillStyle = "#7aa2f7";
+    ctx.font = "9px 'JetBrains Mono', monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("Base", baseX, T - 6);
+  }, [data, baseIRR, width, hoveredRow]);
+
+  const handleMouseMove = (e) => {
+    if (!data || data.length === 0) return;
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const { T, B } = PAD;
+    const rowH = (canvas.height - T - B) / data.length;
+    const row = Math.floor((my - T) / rowH);
+    if (row >= 0 && row < data.length) {
+      setHoveredRow(row);
+      setTooltipPos({ x: e.clientX, y: e.clientY });
+    } else {
+      setHoveredRow(null);
+    }
+  };
+
+  const hoveredData = hoveredRow != null ? data[hoveredRow] : null;
+  const fmtVal = (v, unit) => unit === "bps" ? Math.round(v) + " bps" : unit === "$M" ? "$" + v.toFixed(1) + "M" : v.toFixed(2) + (unit === "%" ? "%" : "");
 
   return (
-    <div ref={containerRef} style={{ width: "100%" }}>
-      <canvas ref={canvasRef} width={width} height={Math.max(220, (data || []).length * 28 + 40)}
-        style={{ width: "100%", height: "auto", display: "block" }} />
+    <div ref={containerRef} style={{ width: "100%", position: "relative" }}>
+      <canvas ref={canvasRef}
+        width={width}
+        height={Math.max(240, (data || []).length * 38 + 50)}
+        style={{ width: "100%", height: "auto", display: "block", cursor: "crosshair" }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoveredRow(null)}
+      />
+      {hoveredData && (
+        <div style={{
+          position: "fixed", left: tooltipPos.x + 14, top: tooltipPos.y - 10,
+          background: "#1a1b26", border: "1px solid #3b4261", borderRadius: 8,
+          padding: "10px 14px", fontSize: 11, fontFamily: F, zIndex: 999,
+          pointerEvents: "none", minWidth: 220, boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+        }}>
+          <div style={{ fontWeight: 700, color: "#c0caf5", marginBottom: 6, fontSize: 12 }}>{hoveredData.label}</div>
+          <div style={{ color: "#565f89", marginBottom: 8, fontSize: 10 }}>{hoveredData.shockDesc}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "3px 10px" }}>
+            <span style={{ color: "#565f89" }}>Base</span>
+            <span style={{ color: "#7aa2f7" }}>{fmtVal(hoveredData.baseVal, hoveredData.unit)}</span>
+            <span style={{ color: "#9ece6a" }}>Shocked up</span>
+            <span style={{ color: "#9ece6a" }}>→ IRR {hoveredData.irrUp != null ? (hoveredData.irrUp * 100).toFixed(2) + "%" : "—"}</span>
+            <span style={{ color: "#f7768e" }}>Shocked down</span>
+            <span style={{ color: "#f7768e" }}>→ IRR {hoveredData.irrDown != null ? (hoveredData.irrDown * 100).toFixed(2) + "%" : "—"}</span>
+            <span style={{ color: "#e0af68" }}>IRR range</span>
+            <span style={{ color: "#e0af68", fontWeight: 700 }}>Δ{((hoveredData.impact ?? 0) * 10000).toFixed(0)} bps</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2758,7 +2850,8 @@ export default function JOLCOv3() {
           {/* ── TORNADO CHART ── */}
           <div style={{ background: "#1a1b26", borderRadius: 10, padding: 18, border: "1px solid #292e42", marginTop: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: "#c0caf5", marginBottom: 10, fontFamily: F, display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ color: "#7aa2f7" }}>●</span>IRR Sensitivity (Tornado) — impact of ±1 shock per variable
+              <span style={{ color: "#7aa2f7" }}>●</span>IRR Sensitivity — how much blended IRR moves when each variable is shocked by one typical market move
+              <span style={{ fontSize: 10, color: "#565f89", fontWeight: 400, marginLeft: 8 }}>hover a bar for details · green = variable up helps IRR · red = variable up hurts IRR</span>
             </div>
             <TornadoChart
               data={computeTornadoData({
